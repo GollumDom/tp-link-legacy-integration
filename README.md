@@ -37,11 +37,37 @@ entities.
 
 ## Installation
 
-### HACS (custom repository)
+### Prerequisite: HACS
+
+HACS (Home Assistant Community Store) is what installs and updates integrations
+that are not shipped with Home Assistant. If you do not have it yet:
+
+1. Follow the official guide: **<https://hacs.xyz/docs/use/download/download/>**
+   (it walks through the download script, then restarting Home Assistant)
+2. Add HACS itself as an integration:
+   *Settings → Devices & services → Add integration → HACS*
+3. It asks you to authorise a GitHub account — HACS reads the repositories
+   through the GitHub API
+
+Once HACS appears in your sidebar, come back here.
+
+*Not using HACS? Jump to [Manual](#manual) below — it needs no extra tooling.*
+
+### HACS — one click
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=GollumDom&repository=tp-link-legacy-integration&category=integration)
+
+The button opens the repository straight inside HACS on your instance. Install
+**TP-Link Legacy**, then restart Home Assistant.
+
+<details>
+<summary>Manual HACS steps</summary>
 
 1. HACS → Integrations → ⋮ menu → *Custom repositories*
 2. URL `https://github.com/GollumDom/tp-link-legacy-integration`, category *Integration*
 3. Install **TP-Link Legacy**, then restart Home Assistant
+
+</details>
 
 ### Manual
 
@@ -50,9 +76,10 @@ Copy `custom_components/tplink_legacy` into your configuration's
 
 ### Setup
 
-*Settings → Devices & services → Add integration → TP-Link Legacy*, then enter
-the router's IP address and web-interface password (the user is `admin` by
-default).
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tplink_legacy)
+
+Or *Settings → Devices & services → Add integration → TP-Link Legacy*. Enter the
+router's IP address and web-interface password (the user is `admin` by default).
 
 A router accepts **only one administrator at a time**: if you are logged into its
 web interface in a browser, the integration may be locked out, and vice versa.

@@ -33,11 +33,37 @@ signale dans les journaux plutôt que de créer des entités vides.
 
 ## Installation
 
-### HACS (dépôt personnalisé)
+### Prérequis : HACS
+
+HACS (Home Assistant Community Store) est ce qui installe et met à jour les
+intégrations non livrées avec Home Assistant. Si vous ne l'avez pas encore :
+
+1. Suivez le guide officiel : **<https://hacs.xyz/docs/use/download/download/>**
+   (il détaille le script de téléchargement, puis le redémarrage de Home Assistant)
+2. Ajoutez HACS comme intégration :
+   *Paramètres → Appareils et services → Ajouter une intégration → HACS*
+3. Il demande d'autoriser un compte GitHub — HACS lit les dépôts via l'API GitHub
+
+Une fois HACS présent dans votre barre latérale, revenez ici.
+
+*Vous n'utilisez pas HACS ? Passez à [l'installation manuelle](#manuelle)
+ci-dessous, elle ne demande aucun outil supplémentaire.*
+
+### HACS — en un clic
+
+[![Ouvrir votre instance Home Assistant et afficher ce dépôt dans le Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=GollumDom&repository=tp-link-legacy-integration&category=integration)
+
+Le bouton ouvre directement le dépôt dans HACS sur votre instance. Installez
+**TP-Link Legacy**, puis redémarrez Home Assistant.
+
+<details>
+<summary>Étapes manuelles dans HACS</summary>
 
 1. HACS → Intégrations → menu ⋮ → *Dépôts personnalisés*
 2. URL : `https://github.com/GollumDom/tp-link-legacy-integration`, catégorie *Intégration*
 3. Installer **TP-Link Legacy**, puis redémarrer Home Assistant
+
+</details>
 
 ### Manuelle
 
@@ -46,8 +72,10 @@ votre configuration, puis redémarrer Home Assistant.
 
 ### Configuration
 
-*Paramètres → Appareils et services → Ajouter une intégration → TP-Link Legacy*,
-puis saisir l'adresse IP et le mot de passe de l'interface web du routeur
+[![Ouvrir votre instance Home Assistant et commencer la configuration d'une nouvelle intégration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tplink_legacy)
+
+Ou *Paramètres → Appareils et services → Ajouter une intégration → TP-Link
+Legacy*. Saisissez l'adresse IP et le mot de passe de l'interface web du routeur
 (l'utilisateur est `admin` par défaut).
 
 Un routeur n'accepte **qu'un administrateur connecté à la fois** : si vous êtes

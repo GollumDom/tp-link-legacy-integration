@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Routeur TP-Link",
+        "description": "Home Assistant doit se trouver sur le réseau local du routeur : ce firmware ne communique les données personnelles (Wi-Fi, appareils connectés) qu'à un client local.",
+        "data": {
+          "host": "Adresse IP",
+          "password": "Mot de passe",
+          "username": "Nom d'utilisateur"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Connexion impossible",
+      "invalid_auth": "Identifiants refusés",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Ce routeur est déjà configuré"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "clients": { "name": "Appareils connectés" },
+      "uptime": { "name": "Démarré le" },
+      "wan_ip": { "name": "Adresse IP publique" },
+      "wan_status": { "name": "État WAN" },
+      "lan_ip": { "name": "Adresse IP locale" }
+    },
+    "binary_sensor": {
+      "wan": { "name": "Internet" }
+    },
+    "switch": {
+      "wireless": { "name": "Wi-Fi {band}" }
+    },
+    "button": {
+      "reboot": { "name": "Redémarrer" }
+    }
+  }
+}

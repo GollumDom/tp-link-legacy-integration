@@ -1,100 +1,118 @@
 # TP-Link Legacy — intégration Home Assistant
 
-Intégration pour les routeurs TP-Link « legacy » — TL-WR841N v13/v14 et proches,
-c'est-à-dire les firmwares qui exposent `/cgi_gdpr` et que l'intégration
-officielle `tplink` de Home Assistant ne gère pas.
+Intégration pour les routeurs TP-Link « legacy » — les firmwares qui exposent
+`/cgi_gdpr`, dont le **TL-WR841N v13/v14**, jamais couverts par l'intégration
+TP-Link officielle.
 
-> **État : en construction.** Le client Python du routeur est écrit et testé ;
-> l'intégration Home Assistant proprement dite (config flow, coordinator,
-> entités) reste à faire. Voir [Feuille de route](#feuille-de-route).
+Elle parle directement le protocole de l'interface web du routeur : ni
+navigateur, ni cloud, ni dépendance externe.
 
-## Ce qui fonctionne aujourd'hui
+## ⚠️ Home Assistant doit être sur le LAN du routeur
 
-`custom_components/tplink_legacy/api/` — un client asynchrone complet :
+Ces firmwares appliquent une restriction « GDPR » : les objets contenant des
+données personnelles — clé Wi-Fi, adresses MAC des clients, identifiants WAN —
+ne sont lisibles que par un client **du même réseau local**. Depuis un autre
+sous-réseau, le routeur répond `HTTP 500` sur ces objets et n'expose que le
+modèle, le firmware et le mode.
+
+Le routeur le dit lui-même via `/cgi/info` :
+
+```
+userType="Admin"  clientLocal=1   → tout est lisible
+userType="Admin"  clientLocal=0   → seules les données non personnelles le sont
+```
+
+Ce comportement vient du routeur : le JavaScript de sa propre interface web
+reçoit le même `HTTP 500` dans cette situation. L'intégration le détecte et le
+signale dans les journaux plutôt que de créer des entités vides.
+
+## Installation
+
+### HACS (dépôt personnalisé)
+
+1. HACS → Intégrations → menu ⋮ → *Dépôts personnalisés*
+2. URL : `https://github.com/GollumDom/tp-link-legacy-integration`, catégorie *Intégration*
+3. Installer **TP-Link Legacy**, puis redémarrer Home Assistant
+
+### Manuelle
+
+Copier `custom_components/tplink_legacy` dans le dossier `custom_components` de
+votre configuration, puis redémarrer Home Assistant.
+
+### Configuration
+
+*Paramètres → Appareils et services → Ajouter une intégration → TP-Link Legacy*,
+puis saisir l'adresse IP et le mot de passe de l'interface web du routeur
+(l'utilisateur est `admin` par défaut).
+
+Un routeur n'accepte **qu'un administrateur connecté à la fois** : si vous êtes
+connecté à son interface web dans un navigateur, l'intégration peut en être
+écartée, et inversement.
+
+## Entités
+
+| Entité | Type | Détail |
+|---|---|---|
+| Appareils connectés | capteur | nombre de clients (baux DHCP + stations Wi-Fi) |
+| Démarré le | capteur | horodatage, à partir de l'*uptime* |
+| Adresse IP publique / locale | capteur | diagnostic |
+| État WAN | capteur | diagnostic |
+| Internet | capteur binaire | connectivité WAN |
+| Wi-Fi *bande* | interrupteur | allume/éteint une radio ; SSID, canal et sécurité en attributs |
+| Redémarrer | bouton | redémarre le routeur |
+| *par appareil* | device_tracker | présence, IP, nom d'hôte, filaire ou Wi-Fi |
+
+Les `device_tracker` sont créés au fur et à mesure de la découverte des
+appareils ; un appareil déjà vu passe *absent* au lieu de disparaître.
+
+Interrogation toutes les 30 s. Le httpd du routeur est lent (~25 ms par requête,
+une seule à la fois) : l'intégration n'ouvre qu'une session par routeur.
+
+## Le client seul
+
+`custom_components/tplink_legacy/api` est un client asyncio autonome, utilisable
+hors Home Assistant :
 
 ```python
 from tplink_legacy.api import TpLinkRouter
 
-router = TpLinkRouter(host="192.168.0.1", password="motdepasse")
+router = TpLinkRouter(host="192.168.0.1", password="…")
 try:
-    status = await router.get_status()
-    print(status["info"]["model"], "—", status["clientCount"], "appareils")
-    await router.set_wireless_enabled(False, band="5GHz")
+    print(await router.get_status())
+    await router.set_wireless_enabled(False, band="2.4GHz")
 finally:
-    await router.disconnect()
+    await router.disconnect()   # libère le slot administrateur
 ```
 
-Lecture : informations système, LAN, ports Ethernet, WAN, radios Wi-Fi, baux
-DHCP, stations associées, et une vue unifiée des appareils connectés.
-Écriture : allumage des radios, SSID, redémarrage.
+Un équivalent JavaScript existe, avec serveur REST et ligne de commande :
+voir [`docs/PORTAGE.md`](docs/PORTAGE.md).
 
-📖 **[Documentation de l'API](docs/API.md)** — méthodes, structures rendues,
-accès bas niveau par OID, erreurs.
-📖 **[Notes de portage](docs/PORTAGE.md)** — correspondance avec le client
-JavaScript d'origine et écarts assumés.
+## Protocole
 
-## Matériel visé
+Relevé dans les scripts `js/lib.js` et `js/tpEncrypt.js` servis par le routeur —
+détail dans [`docs/API.md`](docs/API.md).
 
-Testé sur **TL-WR841N v14** (firmware 0.9.1 4.17). Le protocole est commun à la
-gamme : les modèles servant `/cgi_gdpr` et `js/tpEncrypt.js` devraient
-fonctionner.
+1. `POST /cgi?8` → clé publique RSA 512 bits (`nn`, `ee`) et compteur (`seq`).
+2. Le client tire une clé AES-128-CBC et un IV (16 chiffres chacun).
+3. Chaque requête part en `POST /cgi_gdpr`, corps
+   `sign=<hexa RSA>\r\ndata=<base64 AES>\r\n`.
+4. La réponse est du base64 AES.
 
-Si un OID manque sur votre modèle, la section concernée rend `null` sans faire
-échouer le reste — `get_status()` isole chaque section.
+Deux pièges pour qui réimplémente :
 
-## Contraintes du firmware, à connaître avant de commencer
+- **`Referer` est obligatoire** — sans lui, le routeur répond `403` sur tout.
+- **La signature doit rejouer `key=…&iv=…` à chaque requête.** La forme courte
+  (`h=…&s=…`) que propose le firmware suppose que le routeur a encore la clé de
+  session en mémoire ; sinon elle produit un `500` et invalide le cookie.
 
-Ce ne sont pas des limites de l'intégration mais du routeur lui-même, et elles
-dictent la conception :
-
-| Contrainte | Conséquence |
-|---|---|
-| **Un seul administrateur connecté à la fois** | Ouvrir l'interface web dans un navigateur déconnecte l'intégration, et inversement. |
-| **Verrouillage 2 h après 10 échecs de mot de passe** | Un mot de passe erroné dans la configuration bloque l'accès pour 2 heures. |
-| **Pas de requêtes concurrentes** | Les appels sont sérialisés par session. |
-| **Réponses HTTP malformées** | Le routeur annonce `Transfer-Encoding: chunked` sans l'appliquer ; les clients HTTP stricts échouent, d'où un parseur maison. |
-
-C'est la première contrainte qui justifie le futur interrupteur **Fetch data**
-(voir ci-dessous) : pouvoir suspendre l'interrogation pour reprendre la main sur
-l'interface web.
-
-## Installation
-
-### HACS
-
-*(à venir — le dépôt n'est pas encore publiable en tant qu'intégration)*
-
-### Manuelle
-
-*(à venir)*
-
-## Feuille de route
-
-- [x] Client Python du routeur (`api/`) — 33 tests
-- [x] Documentation de l'API et notes de portage
-- [ ] `manifest.json`, `hacs.json`, `info.md` — publication HACS
-- [ ] Config flow : hôte, identifiants, intervalle d'interrogation
-- [ ] `DataUpdateCoordinator` sur `get_status()`
-- [ ] Entités
-  - [ ] `binary_sensor` — connexion WAN
-  - [ ] `sensor` — uptime, IP publique, nombre d'appareils, débit du lien
-  - [ ] `switch` — radios Wi-Fi
-  - [ ] `switch` — **Fetch data** : suspend l'interrogation du routeur
-  - [ ] `button` — redémarrage
-  - [ ] `device_tracker` — présence des appareils
-- [ ] Traductions FR / EN
-
-## Développement
+## Tests
 
 ```bash
 python3 -m unittest discover -s tests
 ```
 
-Aucune dépendance de test. Le client n'a besoin que de `cryptography`, déjà
-présent dans Home Assistant.
+Les tests couvrent le protocole et l'API haut niveau, sans routeur.
 
-## Origine
+## Licence
 
-Portage du client JavaScript `Works/JS/tplink`, lui-même issu de la
-rétro-ingénierie des scripts servis par l'interface web du routeur
-(`js/lib.js`, `js/tpEncrypt.js`, `js/encrypt.js`, `js/oid_str.js`, `js/err.js`).
+MIT

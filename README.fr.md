@@ -91,7 +91,7 @@ finally:
 
 Un équivalent JavaScript existe, avec serveur REST et ligne de commande :
 voir [`docs/PORTAGE.md`](docs/PORTAGE.md) et le paquet npm
-[tp-link-api](https://github.com/Smeagolworms4/tp-link-api).
+[tp-link-legacy-api](https://github.com/Smeagolworms4/tp-link-legacy-api).
 
 ## Protocole
 

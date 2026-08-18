@@ -94,7 +94,7 @@ finally:
 
 A JavaScript counterpart exists, with a REST server and a command line: see
 [`docs/PORTAGE.md`](docs/PORTAGE.md) and the npm package
-[tp-link-api](https://github.com/Smeagolworms4/tp-link-api).
+[tp-link-legacy-api](https://github.com/Smeagolworms4/tp-link-legacy-api).
 
 ## Protocol
 

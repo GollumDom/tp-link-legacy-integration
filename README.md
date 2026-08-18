@@ -1,77 +1,85 @@
-# TP-Link Legacy — intégration Home Assistant
+# TP-Link Legacy — Home Assistant integration
 
-Intégration pour les routeurs TP-Link « legacy » — les firmwares qui exposent
-`/cgi_gdpr`, dont le **TL-WR841N v13/v14**, jamais couverts par l'intégration
-TP-Link officielle.
+[!["Buy Me A Coffee"](https://raw.githubusercontent.com/Smeagolworms4/donate-assets/master/coffee.png)](https://www.buymeacoffee.com/smeagolworms4)
+[!["Buy Me A Coffee"](https://raw.githubusercontent.com/Smeagolworms4/donate-assets/master/paypal.png)](https://www.paypal.com/donate/?business=SURRPGEXF4YVU&no_recurring=0&item_name=Hello%2C+I%27m+SmeagolWorms4.+For+my+open+source+projects.%0AThanks+you+very+mutch+%21%21%21&currency_code=EUR)
 
-Elle parle directement le protocole de l'interface web du routeur : ni
-navigateur, ni cloud, ni dépendance externe.
+*Read this in [French](README.fr.md).*
 
-## ⚠️ Home Assistant doit être sur le LAN du routeur
+Home Assistant integration for **legacy TP-Link routers** — the firmwares that
+expose `/cgi_gdpr`, including the **TL-WR841N v13/v14**, which the official
+TP-Link integration has never covered.
 
-Ces firmwares appliquent une restriction « GDPR » : les objets contenant des
-données personnelles — clé Wi-Fi, adresses MAC des clients, identifiants WAN —
-ne sont lisibles que par un client **du même réseau local**. Depuis un autre
-sous-réseau, le routeur répond `HTTP 500` sur ces objets et n'expose que le
-modèle, le firmware et le mode.
+It speaks the router's web-interface protocol directly: no browser, no cloud, no
+external dependency.
 
-Le routeur le dit lui-même via `/cgi/info` :
+![hacs](https://img.shields.io/badge/HACS-custom%20repository-41BDF5)
+![iot class](https://img.shields.io/badge/IoT%20class-local%20polling-6ee7a8)
+![license](https://img.shields.io/badge/license-MIT-blue)
+
+## ⚠️ Home Assistant must sit on the router's LAN
+
+These firmwares enforce a "GDPR" restriction: objects holding personal data —
+Wi-Fi passphrase, client MAC addresses, WAN credentials — are only readable by a
+client **on the same local network**. From another subnet the router answers
+`HTTP 500` for those objects and exposes only model, firmware and mode.
+
+The router says so itself through `/cgi/info`:
 
 ```
-userType="Admin"  clientLocal=1   → tout est lisible
-userType="Admin"  clientLocal=0   → seules les données non personnelles le sont
+userType="Admin"  clientLocal=1   → everything is readable
+userType="Admin"  clientLocal=0   → only non-personal data is
 ```
 
-Ce comportement vient du routeur : le JavaScript de sa propre interface web
-reçoit le même `HTTP 500` dans cette situation. L'intégration le détecte et le
-signale dans les journaux plutôt que de créer des entités vides.
+This comes from the router, not from this integration: the JavaScript of its own
+web interface receives the very same `HTTP 500` in that situation. The
+integration detects it and explains it in the logs instead of creating empty
+entities.
 
 ## Installation
 
-### HACS (dépôt personnalisé)
+### HACS (custom repository)
 
-1. HACS → Intégrations → menu ⋮ → *Dépôts personnalisés*
-2. URL : `https://github.com/GollumDom/tp-link-legacy-integration`, catégorie *Intégration*
-3. Installer **TP-Link Legacy**, puis redémarrer Home Assistant
+1. HACS → Integrations → ⋮ menu → *Custom repositories*
+2. URL `https://github.com/GollumDom/tp-link-legacy-integration`, category *Integration*
+3. Install **TP-Link Legacy**, then restart Home Assistant
 
-### Manuelle
+### Manual
 
-Copier `custom_components/tplink_legacy` dans le dossier `custom_components` de
-votre configuration, puis redémarrer Home Assistant.
+Copy `custom_components/tplink_legacy` into your configuration's
+`custom_components` folder, then restart Home Assistant.
 
-### Configuration
+### Setup
 
-*Paramètres → Appareils et services → Ajouter une intégration → TP-Link Legacy*,
-puis saisir l'adresse IP et le mot de passe de l'interface web du routeur
-(l'utilisateur est `admin` par défaut).
+*Settings → Devices & services → Add integration → TP-Link Legacy*, then enter
+the router's IP address and web-interface password (the user is `admin` by
+default).
 
-Un routeur n'accepte **qu'un administrateur connecté à la fois** : si vous êtes
-connecté à son interface web dans un navigateur, l'intégration peut en être
-écartée, et inversement.
+A router accepts **only one administrator at a time**: if you are logged into its
+web interface in a browser, the integration may be locked out, and vice versa.
 
-## Entités
+## Entities
 
-| Entité | Type | Détail |
+| Entity | Type | Detail |
 |---|---|---|
-| Appareils connectés | capteur | nombre de clients (baux DHCP + stations Wi-Fi) |
-| Démarré le | capteur | horodatage, à partir de l'*uptime* |
-| Adresse IP publique / locale | capteur | diagnostic |
-| État WAN | capteur | diagnostic |
-| Internet | capteur binaire | connectivité WAN |
-| Wi-Fi *bande* | interrupteur | allume/éteint une radio ; SSID, canal et sécurité en attributs |
-| Redémarrer | bouton | redémarre le routeur |
-| *par appareil* | device_tracker | présence, IP, nom d'hôte, filaire ou Wi-Fi |
+| Connected devices | sensor | client count (DHCP leases + Wi-Fi stations) |
+| Up since | sensor | timestamp, derived from uptime |
+| Public / Local IP address | sensor | diagnostic |
+| WAN status | sensor | diagnostic |
+| Internet | binary sensor | WAN connectivity |
+| Wi-Fi *band* | switch | turns a radio on/off; SSID, channel and security as attributes |
+| Reboot | button | reboots the router |
+| *per device* | device_tracker | presence, IP, hostname, wired or Wi-Fi |
 
-Les `device_tracker` sont créés au fur et à mesure de la découverte des
-appareils ; un appareil déjà vu passe *absent* au lieu de disparaître.
+`device_tracker` entities are created as devices are discovered; a device seen
+once becomes *away* instead of disappearing.
 
-Interrogation toutes les 30 s. Le httpd du routeur est lent (~25 ms par requête,
-une seule à la fois) : l'intégration n'ouvre qu'une session par routeur.
+Polled every 30 s. The router's httpd is slow (~25 ms per request, one at a
+time), so the integration keeps a single session per router.
 
-## Le client seul
+## The client on its own
 
-`custom_components/tplink_legacy/api` est un client asyncio autonome, utilisable
-hors Home Assistant :
+`custom_components/tplink_legacy/api` is a standalone asyncio client, usable
+outside Home Assistant:
 
 ```python
 from tplink_legacy.api import TpLinkRouter
@@ -81,29 +89,31 @@ try:
     print(await router.get_status())
     await router.set_wireless_enabled(False, band="2.4GHz")
 finally:
-    await router.disconnect()   # libère le slot administrateur
+    await router.disconnect()   # frees the administrator slot
 ```
 
-Un équivalent JavaScript existe, avec serveur REST et ligne de commande :
-voir [`docs/PORTAGE.md`](docs/PORTAGE.md).
+A JavaScript counterpart exists, with a REST server and a command line: see
+[`docs/PORTAGE.md`](docs/PORTAGE.md) and the npm package
+[tp-link-api](https://github.com/Smeagolworms4/tp-link-api).
 
-## Protocole
+## Protocol
 
-Relevé dans les scripts `js/lib.js` et `js/tpEncrypt.js` servis par le routeur —
-détail dans [`docs/API.md`](docs/API.md).
+Reverse-engineered from the `js/lib.js` and `js/tpEncrypt.js` scripts served by
+the router — details in [`docs/API.md`](docs/API.md).
 
-1. `POST /cgi?8` → clé publique RSA 512 bits (`nn`, `ee`) et compteur (`seq`).
-2. Le client tire une clé AES-128-CBC et un IV (16 chiffres chacun).
-3. Chaque requête part en `POST /cgi_gdpr`, corps
-   `sign=<hexa RSA>\r\ndata=<base64 AES>\r\n`.
-4. La réponse est du base64 AES.
+1. `POST /cgi?8` → 512-bit RSA public key (`nn`, `ee`) and session counter (`seq`).
+2. The client draws an AES-128-CBC key and IV (16 digits each).
+3. Every request goes to `POST /cgi_gdpr`, body
+   `sign=<RSA hex>\r\ndata=<AES base64>\r\n`.
+4. The response is AES base64.
 
-Deux pièges pour qui réimplémente :
+Two traps for anyone reimplementing this:
 
-- **`Referer` est obligatoire** — sans lui, le routeur répond `403` sur tout.
-- **La signature doit rejouer `key=…&iv=…` à chaque requête.** La forme courte
-  (`h=…&s=…`) que propose le firmware suppose que le routeur a encore la clé de
-  session en mémoire ; sinon elle produit un `500` et invalide le cookie.
+- **`Referer` is mandatory** — without it the router answers `403` on everything,
+  including its own `.js` files.
+- **The signature must replay `key=…&iv=…` on every request.** The short form
+  (`h=…&s=…`) the firmware offers assumes the router still holds the session key
+  in memory; once that context is lost it yields a `500` and voids the cookie.
 
 ## Tests
 
@@ -111,8 +121,8 @@ Deux pièges pour qui réimplémente :
 python3 -m unittest discover -s tests
 ```
 
-Les tests couvrent le protocole et l'API haut niveau, sans routeur.
+The tests cover the protocol and the high-level API, with no router involved.
 
-## Licence
+## License
 
 MIT

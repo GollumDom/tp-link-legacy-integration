@@ -51,13 +51,16 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._warned_restricted = False
 
         seconds = entry.options.get(CONF_SCAN_INTERVAL)
+        self._interval = (
+            timedelta(seconds=int(seconds)) if seconds else DEFAULT_SCAN_INTERVAL
+        )
+        self._polling = True
+
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN} {entry.data[CONF_HOST]}",
-            update_interval=(
-                timedelta(seconds=int(seconds)) if seconds else DEFAULT_SCAN_INTERVAL
-            ),
+            update_interval=self._interval,
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -74,20 +77,57 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if mac := client.get("mac"):
                 self.known_clients.add(mac)
 
-        # Le firmware refuse les données personnelles à un client hors LAN :
-        # on le signale une fois plutôt que de laisser des entités vides.
+        # Des sections manquantes signalent presque toujours une éviction : le
+        # firmware n'admet qu'un administrateur, et toute connexion — un
+        # navigateur ouvert sur l'interface web — invalide celle de Home
+        # Assistant en cours de lecture.
         errors = status.get("errors") or {}
         if errors and not self._warned_restricted:
             self._warned_restricted = True
             _LOGGER.warning(
-                "Le routeur %s refuse une partie des données (%s). "
-                "Ce firmware ne les expose qu'à un client du même réseau local : "
-                "Home Assistant doit être sur le LAN du routeur.",
+                "Le routeur %s n'a pas renvoyé certaines sections (%s). "
+                "Ce firmware n'accepte qu'un administrateur connecté à la fois : "
+                "une session ouverte sur son interface web évince celle de Home "
+                "Assistant. L'interrupteur « Interrogation du routeur » permet de "
+                "suspendre les relevés le temps d'une intervention manuelle.",
                 self.router.host,
                 ", ".join(sorted(errors)),
             )
+        elif not errors:
+            self._warned_restricted = False
 
         return status
+
+    @property
+    def polling(self) -> bool:
+        """L'interrogation périodique est-elle active ?"""
+        return self._polling
+
+    def set_polling(self, enabled: bool) -> None:
+        """Suspend ou reprend l'interrogation périodique.
+
+        Le routeur n'accepte qu'un administrateur à la fois : chaque connexion
+        invalide la précédente. Suspendre l'interrogation rend donc l'interface
+        web utilisable sans que Home Assistant ne déconnecte l'utilisateur
+        toutes les trente secondes — et inversement.
+
+        Les données déjà lues restent exposées ; elles cessent simplement d'être
+        rafraîchies.
+        """
+        if enabled == self._polling:
+            return
+        self._polling = enabled
+        # Le setter de `update_interval` reprogramme (ou annule) la minuterie.
+        self.update_interval = self._interval if enabled else None
+        _LOGGER.debug(
+            "Interrogation de %s %s",
+            self.router.host,
+            "reprise" if enabled else "suspendue",
+        )
+
+    async def async_release_session(self) -> None:
+        """Ferme la session côté routeur pour libérer le slot administrateur."""
+        await self.router.disconnect()
 
     def clients_by_mac(self) -> dict[str, dict[str, Any]]:
         """Instantané des clients, indexé par adresse MAC."""

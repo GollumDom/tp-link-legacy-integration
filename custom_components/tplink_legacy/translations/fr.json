@@ -82,6 +82,9 @@
     "switch": {
       "wireless": {
         "name": "Wi-Fi {band}"
+      },
+      "polling": {
+        "name": "Interrogation du routeur"
       }
     },
     "button": {

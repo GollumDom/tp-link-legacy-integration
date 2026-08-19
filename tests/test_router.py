@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ class FakeSession:
         self.sets: list[tuple[str, dict, str | None]] = []
         self.logged_in = True
         self.cookie = "JSESSIONID=x"
+        self.batches = 0
 
     def _resolve(self, oid: str):
         if oid not in self.data:
@@ -49,6 +51,20 @@ class FakeSession:
     async def set(self, oid, attrs, *, stack=None, p_stack=None):
         self.sets.append((oid, dict(attrs), stack))
         return True
+
+    async def execute(self, actions):
+        """Le lot unique utilisé par `get_status`.
+
+        Reproduit le comportement du routeur : une seule action refusée fait
+        échouer la requête entière, ce qui doit déclencher le repli section par
+        section.
+        """
+        self.batches += 1
+        results = []
+        for action in actions:
+            value = self._resolve(action["oid"])
+            results.append(value if isinstance(value, list) else [value])
+        return SimpleNamespace(ret=0, results=results, script="")
 
 
 def build_router(data: dict[str, Any]) -> TpLinkRouter:
@@ -343,3 +359,60 @@ class TestStatus(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStatusEnUnLot(unittest.IsolatedAsyncioTestCase):
+    """`get_status` doit tenir en une seule requête, et savoir se replier."""
+
+    DATA = {
+        "IGD_DEV_INFO": {"modelName": "TL-WR841N", "upTime": "120"},
+        "SYS_CFG": {"flashMac": "48:22:54:2B:A2:D0"},
+        "MULTIMODE": {"mode": "Router"},
+        "LAN_IP_INTF": [{"IPInterfaceIPAddress": "192.168.11.1"}],
+        "LAN_HOST_CFG": [{"DHCPServerEnable": "1"}],
+        "WAN_IP_CONN": [{"enable": "1", "connectionStatus": "Connected",
+                         "externalIPAddress": "88.1.2.3"}],
+        "WAN_PPP_CONN": [],
+        "WAN_COMMON_INTF_CFG": [{"WANAccessType": "Ethernet"}],
+        "WAN_ETH_INTF": [{"status": "Up"}],
+        "LAN_WLAN": [{"__stack": "1,1,0,0,0,0", "SSID": "MAISONDOMO_1",
+                      "enable": "1", "channel": "13", "X_TP_Band": "2.4GHz"}],
+        "LAN_HOST_ENTRY": [{"IPAddress": "192.168.11.9",
+                            "MACAddress": "44:17:93:A4:D3:EC",
+                            "X_TP_ConnType": "1"}],
+        "LAN_WLAN_ASSOC_DEV": [{"associatedDeviceMACAddress": "44:17:93:A4:D3:EC"}],
+    }
+
+    async def test_une_seule_requete(self):
+        router = build_router(dict(self.DATA))
+        status = await router.get_status()
+
+        self.assertEqual(router.session.batches, 1, "tout doit tenir en un lot")
+        self.assertEqual(status["info"]["model"], "TL-WR841N")
+        self.assertEqual(status["lan"]["ip"], "192.168.11.1")
+        self.assertTrue(status["wan"]["connected"])
+        self.assertEqual(status["wireless"][0]["ssid"], "MAISONDOMO_1")
+        self.assertEqual(status["clientCount"], 1)
+        self.assertNotIn("errors", status)
+
+    async def test_repli_section_par_section_si_le_lot_echoue(self):
+        """Un OID refusé fait échouer le lot entier : on relit section par section."""
+        data = dict(self.DATA)
+        data["LAN_WLAN"] = TpLinkError("CMM_INVALID_ARGUMENTS", code=9003)
+
+        router = build_router(data)
+        status = await router.get_status()
+
+        self.assertEqual(router.session.batches, 1, "le lot n'est tenté qu'une fois")
+        # les sections lisibles sont bien là, seule la radio manque
+        self.assertEqual(status["info"]["model"], "TL-WR841N")
+        self.assertEqual(status["lan"]["ip"], "192.168.11.1")
+        self.assertIsNone(status["wireless"])
+        self.assertIn("wireless", status["errors"])
+
+    async def test_le_masque_ppp_n_est_pas_demande(self):
+        """`subnetMask` sur WAN_PPP_CONN fait échouer toute la requête."""
+        from custom_components.tplink_legacy.api.router import ATTRS_WAN_PPP
+
+        self.assertNotIn("subnetMask", ATTRS_WAN_PPP)
+        self.assertIn("remoteIPAddress", ATTRS_WAN_PPP)

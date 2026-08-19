@@ -12,24 +12,24 @@ TP-Link officielle.
 Elle parle directement le protocole de l'interface web du routeur : ni
 navigateur, ni cloud, ni dépendance externe.
 
-## ⚠️ Home Assistant doit être sur le LAN du routeur
+## ⚠️ Un seul administrateur à la fois
 
-Ces firmwares appliquent une restriction « GDPR » : les objets contenant des
-données personnelles — clé Wi-Fi, adresses MAC des clients, identifiants WAN —
-ne sont lisibles que par un client **du même réseau local**. Depuis un autre
-sous-réseau, le routeur répond `HTTP 500` sur ces objets et n'expose que le
-modèle, le firmware et le mode.
+Ces firmwares n'acceptent qu'**une seule session administrateur**. Toute nouvelle
+connexion invalide la précédente, sans prévenir. Ouvrez l'interface web du
+routeur pendant que Home Assistant l'interroge et les deux s'évincent toutes les
+trente secondes — ce qui se voit sous forme d'entités qui se vident au hasard.
 
-Le routeur le dit lui-même via `/cgi/info` :
+Deux mécanismes limitent la casse :
 
-```
-userType="Admin"  clientLocal=1   → tout est lisible
-userType="Admin"  clientLocal=0   → seules les données non personnelles le sont
-```
+- L'instantané complet est lu en **une seule requête** au lieu d'une douzaine,
+  ce qui réduit au minimum la fenêtre pendant laquelle une éviction peut tomber.
+- Un interrupteur **Interrogation du routeur** suspend les relevés. Coupez-le
+  avant d'ouvrir l'interface web : l'intégration rend sa session immédiatement
+  et cesse d'interroger jusqu'à ce que vous le rallumiez. L'état survit à un
+  redémarrage.
 
-Ce comportement vient du routeur : le JavaScript de sa propre interface web
-reçoit le même `HTTP 500` dans cette situation. L'intégration le détecte et le
-signale dans les journaux plutôt que de créer des entités vides.
+Rien de tout cela ne dépend du sous-réseau sur lequel se trouve Home Assistant :
+le routeur est joignable et entièrement lisible à travers un réseau routé.
 
 ## Installation
 
@@ -127,6 +127,7 @@ l'adresse MAC, puis activez l'entité.
 | Internet | capteur binaire | connectivité WAN |
 | Wi-Fi *bande* | interrupteur | allume/éteint une radio ; SSID, canal et sécurité en attributs |
 | Redémarrer | bouton | redémarre le routeur |
+| Interrogation du routeur | interrupteur | suspend les relevés et rend la session |
 | *par appareil* | device_tracker | présence, IP, nom d'hôte, filaire ou Wi-Fi |
 
 Les `device_tracker` sont créés au fur et à mesure de la découverte des

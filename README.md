@@ -16,24 +16,24 @@ external dependency.
 ![iot class](https://img.shields.io/badge/IoT%20class-local%20polling-6ee7a8)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-## ⚠️ Home Assistant must sit on the router's LAN
+## ⚠️ One administrator at a time
 
-These firmwares enforce a "GDPR" restriction: objects holding personal data —
-Wi-Fi passphrase, client MAC addresses, WAN credentials — are only readable by a
-client **on the same local network**. From another subnet the router answers
-`HTTP 500` for those objects and exposes only model, firmware and mode.
+These firmwares accept a **single administrator session**. Every new login
+invalidates the previous one — silently. Open the router's web interface while
+Home Assistant is polling and the two evict each other every thirty seconds,
+which shows up as entities that go blank at random.
 
-The router says so itself through `/cgi/info`:
+Two things keep that under control:
 
-```
-userType="Admin"  clientLocal=1   → everything is readable
-userType="Admin"  clientLocal=0   → only non-personal data is
-```
+- The whole snapshot is read in **one single request** instead of a dozen, so
+  the window during which an eviction can land is as small as possible.
+- A **Router polling** switch suspends the periodic reads. Turn it off before
+  logging into the web interface; the integration releases its session
+  immediately and stops polling until you turn it back on. The state survives a
+  restart.
 
-This comes from the router, not from this integration: the JavaScript of its own
-web interface receives the very same `HTTP 500` in that situation. The
-integration detects it and explains it in the logs instead of creating empty
-entities.
+Nothing here depends on which subnet Home Assistant sits on — the router is
+reachable and fully readable across a routed network.
 
 ## Installation
 
@@ -127,6 +127,7 @@ the MAC address, then enable the entity.
 | Internet | binary sensor | WAN connectivity |
 | Wi-Fi *band* | switch | turns a radio on/off; SSID, channel and security as attributes |
 | Reboot | button | reboots the router |
+| Router polling | switch | suspends the periodic reads, and releases the session |
 | *per device* | device_tracker | presence, IP, hostname, wired or Wi-Fi |
 
 `device_tracker` entities are created as devices are discovered; a device seen

@@ -211,3 +211,54 @@ async def test_unload(hass: HomeAssistant, mock_router) -> None:
 
     assert entry.state is ConfigEntryState.NOT_LOADED
     mock_router.disconnect.assert_awaited()
+
+
+async def test_polling_switch_suspends_updates(hass: HomeAssistant, mock_router) -> None:
+    """Couper l'interrogation libère le routeur et arrête la minuterie.
+
+    Ces firmwares n'acceptent qu'un administrateur : tant que Home Assistant
+    interroge, l'interface web se fait déconnecter, et réciproquement.
+    """
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    switch = "switch.tl_wr841n_router_polling"
+
+    assert hass.states.get(switch).state == STATE_ON
+    assert coordinator.update_interval is not None
+
+    await hass.services.async_call(
+        "switch", "turn_off", {ATTR_ENTITY_ID: switch}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(switch).state == STATE_OFF
+    assert coordinator.polling is False
+    # plus aucune interrogation programmée, et la session est rendue au routeur
+    assert coordinator.update_interval is None
+    mock_router.disconnect.assert_awaited()
+
+    await hass.services.async_call(
+        "switch", "turn_on", {ATTR_ENTITY_ID: switch}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(switch).state == STATE_ON
+    assert coordinator.polling is True
+    assert coordinator.update_interval is not None
+
+
+async def test_polling_switch_stays_available_when_router_is_down(
+    hass: HomeAssistant, mock_router
+) -> None:
+    """L'interrupteur doit rester manipulable même routeur injoignable."""
+    from custom_components.tplink_legacy.api import TpLinkError
+
+    entry = await _setup(hass)
+    mock_router.get_status.side_effect = TpLinkError("injoignable")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    state = hass.states.get("switch.tl_wr841n_router_polling")
+    assert state.state == STATE_ON
+    # les autres entités passent indisponibles, pas celle-ci
+    assert hass.states.get("sensor.tl_wr841n_connected_devices").state == "unavailable"

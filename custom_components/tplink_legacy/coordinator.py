@@ -14,6 +14,7 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -87,6 +88,8 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # navigateur ouvert sur l'interface web — invalide celle de Home
         # Assistant en cours de lecture.
         errors = status.get("errors") or {}
+        self._sync_repair_issue(errors)
+
         if errors and not self._warned_restricted:
             self._warned_restricted = True
             _LOGGER.warning(
@@ -102,6 +105,33 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._warned_restricted = False
 
         return status
+
+    @property
+    def _issue_id(self) -> str:
+        return f"restricted_{self.entry.entry_id}"
+
+    def _sync_repair_issue(self, errors: dict[str, Any]) -> None:
+        """Fait remonter le refus du routeur dans « Paramètres → Réparations ».
+
+        Un simple message de journal passe inaperçu : tant que le routeur ne
+        livre qu'une partie des données, l'utilisateur doit le voir, avec
+        l'explication et la marche à suivre.
+        """
+        if errors:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                self._issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="restricted",
+                translation_placeholders={
+                    "host": self.router.host,
+                    "sections": ", ".join(sorted(errors)),
+                },
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
 
     #: Sections conservées d'un relevé à l'autre quand le routeur les refuse.
     _STICKY_SECTIONS = ("info", "lan", "wan", "wireless")

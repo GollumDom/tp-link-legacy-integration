@@ -295,3 +295,44 @@ async def test_last_known_values_survive_a_refused_section(
     assert hass.states.get("sensor.tl_wr841n_public_ip_address").state == "88.120.10.5"
     assert hass.states.get("switch.tl_wr841n_wi_fi_2_4ghz").attributes["ssid"] == "MAISONDOMO_1"
     assert set(entry.runtime_data.data["stale"]) == {"lan", "wan", "wireless"}
+
+
+async def test_repair_issue_when_router_refuses_sections(
+    hass: HomeAssistant, mock_router
+) -> None:
+    """Le refus doit remonter dans « Réparations », pas seulement dans les journaux."""
+    from homeassistant.helpers import issue_registry as ir
+
+    entry = await _setup(hass)
+    registry = ir.async_get(hass)
+    issue_id = f"restricted_{entry.entry_id}"
+
+    # routeur complet : aucun signalement
+    assert registry.async_get_issue(DOMAIN, issue_id) is None
+
+    mock_router.get_status.return_value = {
+        "host": "192.168.11.1",
+        "name": "192.168.11.1",
+        "info": STATUS["info"],
+        "lan": None,
+        "wan": None,
+        "wireless": None,
+        "clients": [],
+        "clientCount": 0,
+        "errors": {"lan": {"message": "HTTP 500"}, "wireless": {"message": "HTTP 500"}},
+    }
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    issue = registry.async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    assert issue.severity is ir.IssueSeverity.WARNING
+    assert issue.translation_placeholders["sections"] == "lan, wireless"
+    assert issue.translation_placeholders["host"] == "192.168.11.1"
+
+    # le routeur redevient complet : le signalement disparaît
+    mock_router.get_status.return_value = STATUS
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert registry.async_get_issue(DOMAIN, issue_id) is None

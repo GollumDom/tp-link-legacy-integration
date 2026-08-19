@@ -92,5 +92,11 @@
         "name": "Reboot"
       }
     }
+  },
+  "issues": {
+    "restricted": {
+      "title": "Router {host} only returns part of its data",
+      "description": "Refused sections: **{sections}**.\n\nThis TP-Link firmware grants access to sensitive data (Wi-Fi, connected devices, WAN) only intermittently — model, firmware and uptime stay readable. The last known values are kept in the meantime.\n\nLogging into the router's web interface restores access for a few minutes. Note that this firmware accepts a single administrator at a time; the « Router polling » switch suspends the reads while you work on it manually."
+    }
   }
 }

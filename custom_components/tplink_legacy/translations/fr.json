@@ -92,5 +92,11 @@
         "name": "Redémarrer"
       }
     }
+  },
+  "issues": {
+    "restricted": {
+      "title": "Le routeur {host} ne livre qu'une partie des données",
+      "description": "Sections refusées : **{sections}**.\n\nCe firmware TP-Link n'accorde l'accès aux données sensibles (Wi-Fi, appareils connectés, WAN) que par intermittence — le modèle, le micrologiciel et le temps de fonctionnement restent lisibles. Les dernières valeurs connues sont conservées en attendant.\n\nSe connecter à l'interface web du routeur rétablit l'accès pendant quelques minutes. Attention : ce firmware n'accepte qu'un administrateur à la fois, l'interrupteur « Interrogation du routeur » permet de suspendre les relevés le temps d'une intervention manuelle."
+    }
   }
 }

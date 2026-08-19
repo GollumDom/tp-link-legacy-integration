@@ -9,9 +9,15 @@ DOMAIN: Final = "tplink_legacy"
 
 CONF_INCLUDE_SECRETS: Final = "include_secrets"
 
+#: Valeur sentinelle du sélecteur « autre adresse » à l'étape de détection.
+MANUAL_HOST: Final = "__manual__"
+
 DEFAULT_USERNAME: Final = "admin"
 DEFAULT_SCAN_INTERVAL: Final = timedelta(seconds=30)
 DEFAULT_TIMEOUT: Final = 10.0
+
+MIN_SCAN_INTERVAL: Final = 10
+MAX_SCAN_INTERVAL: Final = 600
 
 MANUFACTURER: Final = "TP-Link"
 

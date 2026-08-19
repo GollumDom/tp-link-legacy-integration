@@ -1,13 +1,36 @@
 {
   "config": {
+    "flow_title": "{host}",
     "step": {
       "user": {
+        "title": "Routers found",
+        "description": "{count} compatible router(s) found on the network. Pick one, or enter another address.",
+        "data": {
+          "host": "Router"
+        }
+      },
+      "credentials": {
+        "title": "Sign in to the router",
+        "description": "Web interface credentials for {host}.",
+        "data": {
+          "password": "Password",
+          "username": "Username"
+        }
+      },
+      "manual": {
         "title": "TP-Link router",
         "description": "Home Assistant must sit on the router's local network: this firmware only discloses personal data (Wi-Fi, connected devices) to a local client.",
         "data": {
           "host": "IP address",
           "password": "Password",
           "username": "Username"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Password needs updating",
+        "description": "Router {host} rejected the stored credentials.",
+        "data": {
+          "password": "Password"
         }
       }
     },
@@ -17,25 +40,54 @@
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "This router is already configured"
+      "already_configured": "This router is already configured",
+      "reauth_successful": "Password updated"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "description": "The router's httpd is slow and handles one request at a time: avoid a very short interval.",
+        "data": {
+          "scan_interval": "Polling interval",
+          "include_secrets": "Expose the Wi-Fi passphrase in attributes"
+        }
+      }
     }
   },
   "entity": {
     "sensor": {
-      "clients": { "name": "Connected devices" },
-      "uptime": { "name": "Up since" },
-      "wan_ip": { "name": "Public IP address" },
-      "wan_status": { "name": "WAN status" },
-      "lan_ip": { "name": "Local IP address" }
+      "clients": {
+        "name": "Connected devices"
+      },
+      "uptime": {
+        "name": "Up since"
+      },
+      "wan_ip": {
+        "name": "Public IP address"
+      },
+      "wan_status": {
+        "name": "WAN status"
+      },
+      "lan_ip": {
+        "name": "Local IP address"
+      }
     },
     "binary_sensor": {
-      "wan": { "name": "Internet" }
+      "wan": {
+        "name": "Internet"
+      }
     },
     "switch": {
-      "wireless": { "name": "Wi-Fi {band}" }
+      "wireless": {
+        "name": "Wi-Fi {band}"
+      }
     },
     "button": {
-      "reboot": { "name": "Reboot" }
+      "reboot": {
+        "name": "Reboot"
+      }
     }
   }
 }

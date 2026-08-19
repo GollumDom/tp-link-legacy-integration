@@ -3,15 +3,29 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from homeassistant.exceptions import ConfigEntryAuthFailed
+
 from .api import TpLinkAuthError, TpLinkError, TpLinkRouter
-from .const import DEFAULT_SCAN_INTERVAL, DEFAULT_TIMEOUT, DEFAULT_USERNAME, DOMAIN
+from .const import (
+    CONF_INCLUDE_SECRETS,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TIMEOUT,
+    DEFAULT_USERNAME,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,18 +50,23 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.known_clients: set[str] = set()
         self._warned_restricted = False
 
+        seconds = entry.options.get(CONF_SCAN_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN} {entry.data[CONF_HOST]}",
-            update_interval=DEFAULT_SCAN_INTERVAL,
+            update_interval=(
+                timedelta(seconds=int(seconds)) if seconds else DEFAULT_SCAN_INTERVAL
+            ),
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
+        include_secrets = self.entry.options.get(CONF_INCLUDE_SECRETS, False)
         try:
-            status = await self.router.get_status()
+            status = await self.router.get_status(include_secrets=include_secrets)
         except TpLinkAuthError as err:
-            raise UpdateFailed(f"Authentification refusée : {err}") from err
+            # Déclenche le formulaire de ré-authentification plutôt qu'une erreur muette.
+            raise ConfigEntryAuthFailed(f"Authentification refusée : {err}") from err
         except TpLinkError as err:
             raise UpdateFailed(f"Routeur injoignable : {err}") from err
 

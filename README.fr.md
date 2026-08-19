@@ -82,6 +82,40 @@ Un routeur n'accepte **qu'un administrateur connecté à la fois** : si vous êt
 connecté à son interface web dans un navigateur, l'intégration peut en être
 écartée, et inversement.
 
+### Détection automatique
+
+Ces firmwares n'exposent ni UPnP/SSDP ni mDNS — seul le port 80 est ouvert.
+L'intégration sonde donc les adresses plausibles (d'abord la passerelle de
+l'hôte Home Assistant, puis les `192.168.x.1` / `10.0.x.1` usuelles) avec une
+requête qui ne demande aucun identifiant : `POST /cgi?8` avec `/cgi/getParm`
+renvoie la clé publique RSA de session, ce qu'aucun autre serveur web ne fait.
+Les routeurs trouvés sont proposés dans une liste ; *Autre adresse…* mène
+toujours au formulaire manuel.
+
+## Options
+
+*Paramètres → Appareils et services → TP-Link Legacy → Configurer*
+
+| Option | Défaut | Détail |
+|---|---|---|
+| Intervalle d'interrogation | 30 s | de 10 à 600 s. Le httpd du routeur est lent et ne traite qu'une requête à la fois |
+| Exposer la clé Wi-Fi | désactivé | ajoute la clé aux attributs de l'interrupteur ; le firmware la livre en clair |
+
+Si le mot de passe du routeur change, Home Assistant propose un formulaire de
+ré-authentification au lieu d'abandonner l'entrée.
+
+## À propos des device_tracker
+
+Une entité `device_tracker` est créée pour chaque client vu par le routeur,
+identifiée par son adresse MAC. Comme **toutes les intégrations routeur livrées
+avec Home Assistant** (AsusWRT, Fritz!Box, UniFi, Netgear, Mikrotik…), elles
+sont **désactivées** tant que Home Assistant ne connaît pas déjà un appareil
+portant cette adresse MAC — cela évite de noyer les installations comptant
+beaucoup de clients.
+
+Pour en activer une : *Paramètres → Appareils et services → Entités*, cherchez
+l'adresse MAC, puis activez l'entité.
+
 ## Entités
 
 | Entité | Type | Détail |
@@ -139,13 +173,37 @@ Deux pièges pour qui réimplémente :
   (`h=…&s=…`) que propose le firmware suppose que le routeur a encore la clé de
   session en mémoire ; sinon elle produit un `500` et invalide le cookie.
 
+## Icônes et logo
+
+Les icônes des entités sont livrées avec l'intégration (`icons.json`) et ne
+demandent rien de plus.
+
+Le **logo** affiché par HACS et la page des intégrations est un autre sujet :
+Home Assistant le sert depuis le dépôt
+[home-assistant/brands](https://github.com/home-assistant/brands), une
+intégration tierce ne peut donc pas fournir le sien tant qu'une pull request n'y
+a pas été acceptée. Les visuels sont prêts dans [`brands/`](brands/) — voir
+[`brands/README.md`](brands/README.md) pour la soumission.
+
+<img src="brands/icon.png" alt="Icône TP-Link Legacy" width="96" height="96">
+
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests
+pip install -r requirements-test.txt
+pytest
 ```
 
-Les tests couvrent le protocole et l'API haut niveau, sans routeur.
+53 tests : le protocole et l'API haut niveau sans routeur, plus l'intégration
+elle-même chargée dans une vraie instance Home Assistant — assistant de
+configuration, détection, ré-authentification, options, chaque entité, et le cas
+dégradé où le routeur refuse les données personnelles.
+
+Les seuls tests de protocole se passent de Home Assistant :
+
+```bash
+python3 -m unittest discover -s tests -p 'test_protocol.py'
+```
 
 ## Licence
 

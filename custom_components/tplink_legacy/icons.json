@@ -1,0 +1,26 @@
+{
+  "entity": {
+    "sensor": {
+      "clients": { "default": "mdi:lan-connect" },
+      "uptime": { "default": "mdi:clock-start" },
+      "wan_ip": { "default": "mdi:web" },
+      "wan_status": { "default": "mdi:transit-connection-variant" },
+      "lan_ip": { "default": "mdi:ip-network" }
+    },
+    "binary_sensor": {
+      "wan": {
+        "default": "mdi:wan",
+        "state": { "off": "mdi:web-off" }
+      }
+    },
+    "switch": {
+      "wireless": {
+        "default": "mdi:wifi",
+        "state": { "off": "mdi:wifi-off" }
+      }
+    },
+    "button": {
+      "reboot": { "default": "mdi:restart" }
+    }
+  }
+}

@@ -84,6 +84,38 @@ router's IP address and web-interface password (the user is `admin` by default).
 A router accepts **only one administrator at a time**: if you are logged into its
 web interface in a browser, the integration may be locked out, and vice versa.
 
+### Automatic detection
+
+These firmwares expose neither UPnP/SSDP nor mDNS — only port 80. The
+integration therefore probes the plausible addresses (your Home Assistant
+host's own gateway first, then the usual `192.168.x.1` / `10.0.x.1`) with a
+request that needs no credentials: `POST /cgi?8` with `/cgi/getParm` returns the
+session's RSA public key, which no other web server does. Routers found are
+offered in a list; *Other address…* always leads to the manual form.
+
+## Options
+
+*Settings → Devices & services → TP-Link Legacy → Configure*
+
+| Option | Default | Detail |
+|---|---|---|
+| Polling interval | 30 s | 10 to 600 s. The router's httpd is slow and handles one request at a time |
+| Expose the Wi-Fi passphrase | off | adds the passphrase to the switch attributes; the firmware hands it over in clear |
+
+If the router's password changes, Home Assistant offers a re-authentication form
+instead of dropping the entry.
+
+## About device trackers
+
+`device_tracker` entities are created for every client the router reports, and
+identified by MAC address. Like **every router integration shipped with Home
+Assistant** (AsusWRT, Fritz!Box, UniFi, Netgear, Mikrotik…), they start
+**disabled** unless Home Assistant already knows a device carrying that MAC —
+this keeps installations with many clients from being flooded.
+
+To use one that is disabled: *Settings → Devices & services → Entities*, search
+the MAC address, then enable the entity.
+
 ## Entities
 
 | Entity | Type | Detail |
@@ -142,13 +174,35 @@ Two traps for anyone reimplementing this:
   (`h=…&s=…`) the firmware offers assumes the router still holds the session key
   in memory; once that context is lost it yields a `500` and voids the cookie.
 
+## Icons and logo
+
+Entity icons ship with the integration (`icons.json`) and need nothing else.
+
+The **logo** shown by HACS and the integrations page is another matter: Home
+Assistant serves it from the [home-assistant/brands](https://github.com/home-assistant/brands)
+repository, so a custom integration cannot provide its own until a pull request
+lands there. The artwork is ready in [`brands/`](brands/) — see
+[`brands/README.md`](brands/README.md) for the submission.
+
+<img src="brands/icon.png" alt="TP-Link Legacy icon" width="96" height="96">
+
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests
+pip install -r requirements-test.txt
+pytest
 ```
 
-The tests cover the protocol and the high-level API, with no router involved.
+53 tests: the protocol and the high-level API without any router, plus the
+integration itself loaded inside a real Home Assistant instance — config flow,
+discovery, re-authentication, options, every entity, and the degraded case where
+the router refuses personal data.
+
+The protocol tests alone need no Home Assistant:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_protocol.py'
+```
 
 ## License
 

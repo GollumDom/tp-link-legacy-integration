@@ -73,6 +73,11 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except TpLinkError as err:
             raise UpdateFailed(f"Routeur injoignable : {err}") from err
 
+        # Ce firmware répond de façon intermittente : une section refusée ne
+        # doit pas effacer ce qui a été lu correctement au relevé précédent,
+        # sinon les entités clignotent entre leur valeur et « inconnu ».
+        status = self._merge_with_previous(status)
+
         for client in status.get("clients") or []:
             if mac := client.get("mac"):
                 self.known_clients.add(mac)
@@ -96,6 +101,34 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elif not errors:
             self._warned_restricted = False
 
+        return status
+
+    #: Sections conservées d'un relevé à l'autre quand le routeur les refuse.
+    _STICKY_SECTIONS = ("info", "lan", "wan", "wireless")
+
+    def _merge_with_previous(self, status: dict[str, Any]) -> dict[str, Any]:
+        """Complète les sections manquantes par la dernière valeur connue.
+
+        Les entités concernées portent alors `stale` dans leurs attributs, pour
+        que l'on sache que la valeur affichée n'a pas été rafraîchie.
+        """
+        previous = self.data or {}
+        stale: list[str] = []
+
+        for section in self._STICKY_SECTIONS:
+            if status.get(section) is None and previous.get(section) is not None:
+                status[section] = previous[section]
+                stale.append(section)
+
+        # Les clients, eux, ne sont pas conservés : un appareil parti doit
+        # pouvoir devenir absent, c'est tout l'intérêt du suivi de présence.
+        if stale:
+            status["stale"] = stale
+            status["clientCount"] = (
+                status.get("clientCount")
+                if isinstance(status.get("clients"), list)
+                else previous.get("clientCount")
+            )
         return status
 
     @property

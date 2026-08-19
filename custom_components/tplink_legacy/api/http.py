@@ -61,9 +61,6 @@ async def request(
     for name, value in (headers or {}).items():
         lines.append(f"{name}: {value}")
     lines.append(f"Content-Length: {len(payload)}")
-    # `Connection: close` : on lit jusqu'à la fermeture, ce qui évite d'avoir à
-    # faire confiance à `Content-Length` sur un firmware qui ment déjà sur
-    # `Transfer-Encoding`.
     lines.append("Connection: close")
 
     head = ("\r\n".join(lines)).encode("utf-8") + HEADER_SEPARATOR
@@ -74,7 +71,7 @@ async def request(
             try:
                 writer.write(head + payload)
                 await writer.drain()
-                raw = await reader.read()
+                raw = await _read_response(reader)
             finally:
                 writer.close()
                 # Une socket fermée par le routeur en cours de route (cas du
@@ -88,6 +85,50 @@ async def request(
         raise TimeoutError(f"timeout après {timeout} s") from err
 
     return _parse_response(raw)
+
+
+
+async def _read_response(reader: asyncio.StreamReader) -> bytes:
+    """Lit exactement une réponse, sans attendre la fermeture de la socket.
+
+    Lire jusqu'à l'EOF paraît plus simple, mais ce httpd renvoie parfois une
+    seconde réponse derrière la première : les deux se retrouvent alors
+    concaténées, l'en-tête lu est celui de la première et le corps celui de la
+    seconde — d'où un ``200 OK`` portant une page d'erreur. On s'arrête donc dès
+    que le corps annoncé est complet.
+    """
+    raw = b""
+    while True:
+        chunk = await reader.read(65536)
+        if not chunk:
+            return raw
+        raw += chunk
+        if _is_complete(raw):
+            return raw
+
+
+def _is_complete(raw: bytes) -> bool:
+    """La réponse contient-elle déjà un corps complet ?"""
+    split = raw.find(HEADER_SEPARATOR)
+    if split == -1:
+        return False
+
+    head = raw[:split].lower()
+    body = raw[split + len(HEADER_SEPARATOR) :]
+
+    for line in head.split(b"\r\n"):
+        if line.startswith(b"content-length:"):
+            try:
+                return len(body) >= int(line.split(b":", 1)[1].strip())
+            except ValueError:
+                return False
+
+    if b"transfer-encoding:" in head and b"chunked" in head:
+        # Terminateur de corps chunké. Le firmware annonce parfois `chunked`
+        # sans l'appliquer sur ses pages d'erreur : on attend alors l'EOF.
+        return raw.find(b"0\r\n\r\n", split) != -1
+
+    return False
 
 
 def _parse_response(raw: bytes) -> HttpResponse:

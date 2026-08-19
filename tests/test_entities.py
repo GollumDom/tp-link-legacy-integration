@@ -262,3 +262,36 @@ async def test_polling_switch_stays_available_when_router_is_down(
     assert state.state == STATE_ON
     # les autres entités passent indisponibles, pas celle-ci
     assert hass.states.get("sensor.tl_wr841n_connected_devices").state == "unavailable"
+
+
+async def test_last_known_values_survive_a_refused_section(
+    hass: HomeAssistant, mock_router
+) -> None:
+    """Une section refusée ne doit pas effacer ce qui avait été lu.
+
+    Ce firmware répond de façon intermittente : sans cela les entités
+    clignotent entre leur valeur et « inconnu ».
+    """
+    entry = await _setup(hass)
+    assert hass.states.get("sensor.tl_wr841n_public_ip_address").state == "88.120.10.5"
+    assert hass.states.get("switch.tl_wr841n_wi_fi_2_4ghz").attributes["ssid"] == "MAISONDOMO_1"
+
+    # le routeur ne renvoie plus que les informations générales
+    mock_router.get_status.return_value = {
+        "host": "192.168.11.1",
+        "name": "192.168.11.1",
+        "info": STATUS["info"],
+        "lan": None,
+        "wan": None,
+        "wireless": None,
+        "clients": [],
+        "clientCount": 0,
+        "errors": {"lan": {"message": "HTTP 500"}, "wireless": {"message": "HTTP 500"}},
+    }
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    # les valeurs précédentes sont conservées, et signalées comme non rafraîchies
+    assert hass.states.get("sensor.tl_wr841n_public_ip_address").state == "88.120.10.5"
+    assert hass.states.get("switch.tl_wr841n_wi_fi_2_4ghz").attributes["ssid"] == "MAISONDOMO_1"
+    assert set(entry.runtime_data.data["stale"]) == {"lan", "wan", "wireless"}

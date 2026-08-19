@@ -40,6 +40,18 @@ class TpLinkLegacyDeviceTracker(ScannerEntity):
 
     _attr_should_poll = False
 
+    @property
+    def entity_registry_enabled_default(self) -> bool:
+        """Activer d'emblée, contrairement au défaut de `ScannerEntity`.
+
+        Home Assistant désactive les trackers dont l'adresse MAC ne correspond à
+        aucun appareil déjà connu, pour ne pas encombrer les grosses
+        installations. Sur un routeur domestique, cela revient à n'avoir aucun
+        suivi de présence tant que l'utilisateur n'active pas les entités une à
+        une — ce qui est l'inverse de ce qu'on attend d'une intégration routeur.
+        """
+        return True
+
     def __init__(self, coordinator: TpLinkLegacyCoordinator, mac: str) -> None:
         self.coordinator = coordinator
         self._mac = mac

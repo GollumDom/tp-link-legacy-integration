@@ -112,10 +112,9 @@ async def test_reboot_button(hass: HomeAssistant, mock_router) -> None:
 async def test_device_trackers_are_registered(hass: HomeAssistant, mock_router) -> None:
     """Un tracker est créé par client, identifié par son adresse MAC.
 
-    Comme toutes les intégrations routeur livrées avec Home Assistant, ces
-    entités sont désactivées tant qu'aucun appareil du registre ne porte cette
-    adresse MAC — c'est `ScannerEntity.entity_registry_enabled_default` qui en
-    décide, afin de ne pas encombrer les installations aux nombreux clients.
+    Contrairement au défaut de `ScannerEntity`, elles sont actives dès leur
+    création : sans cela il n'y a aucun suivi de présence tant que l'utilisateur
+    n'a pas activé chaque entité à la main.
     """
     entry = await _setup(hass)
     registry = er.async_get(hass)
@@ -129,7 +128,10 @@ async def test_device_trackers_are_registered(hass: HomeAssistant, mock_router) 
         "44:17:93:A4:D3:EC",
         "20:6E:F1:03:B0:70",
     }
-    assert all(item.disabled_by is er.RegistryEntryDisabler.INTEGRATION for item in entries)
+    # activées d'emblée : sur un routeur domestique, le suivi de présence est
+    # la raison principale d'installer l'intégration
+    assert all(item.disabled_by is None for item in entries)
+    assert hass.states.get("device_tracker.salon_tv").state == STATE_HOME
 
 
 async def test_tracker_is_active_for_a_known_device(

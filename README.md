@@ -179,11 +179,12 @@ Two traps for anyone reimplementing this:
 
 Entity icons ship with the integration (`icons.json`) and need nothing else.
 
-The **logo** shown by HACS and the integrations page is another matter: Home
-Assistant serves it from the [home-assistant/brands](https://github.com/home-assistant/brands)
-repository, so a custom integration cannot provide its own until a pull request
-lands there. The artwork is ready in [`brands/`](brands/) — see
-[`brands/README.md`](brands/README.md) for the submission.
+The **logo** shown by HACS and the integrations page ships with the integration
+too, in [`custom_components/tplink_legacy/brand/`](custom_components/tplink_legacy/brand/).
+Since Home Assistant 2026.3 a custom integration serves its own brand images
+from that folder, and they take priority over the brands CDN — no pull request
+to `home-assistant/brands` is needed, and that repository no longer accepts
+them for custom integrations.
 
 <img src="brands/icon.png" alt="TP-Link Legacy icon" width="96" height="96">
 

@@ -179,12 +179,13 @@ Deux pièges pour qui réimplémente :
 Les icônes des entités sont livrées avec l'intégration (`icons.json`) et ne
 demandent rien de plus.
 
-Le **logo** affiché par HACS et la page des intégrations est un autre sujet :
-Home Assistant le sert depuis le dépôt
-[home-assistant/brands](https://github.com/home-assistant/brands), une
-intégration tierce ne peut donc pas fournir le sien tant qu'une pull request n'y
-a pas été acceptée. Les visuels sont prêts dans [`brands/`](brands/) — voir
-[`brands/README.md`](brands/README.md) pour la soumission.
+Le **logo** affiché par HACS et la page des intégrations est livré avec
+l'intégration lui aussi, dans
+[`custom_components/tplink_legacy/brand/`](custom_components/tplink_legacy/brand/).
+Depuis Home Assistant 2026.3, une intégration tierce sert ses propres visuels
+depuis ce dossier, et ils priment sur le CDN `brands` — aucune pull request sur
+`home-assistant/brands` n'est nécessaire, ce dépôt ne les accepte d'ailleurs
+plus pour les intégrations personnalisées.
 
 <img src="brands/icon.png" alt="Icône TP-Link Legacy" width="96" height="96">
 

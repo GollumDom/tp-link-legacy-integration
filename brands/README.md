@@ -1,30 +1,24 @@
-# Brand assets
+# Visuels de marque
 
-Home Assistant and HACS only display a logo when the integration's domain exists
-in the [home-assistant/brands](https://github.com/home-assistant/brands)
-repository. Until then, `tplink_legacy` shows the default placeholder icon —
-that is a rule of the Home Assistant project, not something an integration can
-set for itself.
+Les fichiers servis à Home Assistant sont dans
+[`../custom_components/tplink_legacy/brand/`](../custom_components/tplink_legacy/brand/) :
+`icon.png` (256×256), `icon@2x.png` (512×512), `logo.png`, `logo@2x.png`.
 
-These files are ready for that submission. Open a pull request on
-`home-assistant/brands` adding:
+Depuis **Home Assistant 2026.3**, une intégration personnalisée sert ses propres
+visuels depuis ce dossier `brand/`, sans configuration ni champ de manifeste, et
+ils priment sur le CDN `brands.home-assistant.io`. Le dépôt
+`home-assistant/brands` n'accepte d'ailleurs plus les icônes d'intégrations
+personnalisées — voir l'annonce
+[Brands proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api).
 
-```
-custom_integrations/tplink_legacy/icon.png       256×256
-custom_integrations/tplink_legacy/icon@2x.png    512×512
-custom_integrations/tplink_legacy/logo.png       256×256
-custom_integrations/tplink_legacy/logo@2x.png    512×512
-```
+Noms de fichiers reconnus : `icon.png`, `logo.png`, leurs variantes `@2x`, et les
+versions sombres préfixées `dark_`.
 
-`icon.svg` is the source. Regenerate the PNGs with:
+`icon.svg` est la source. Pour régénérer les PNG :
 
 ```bash
-inkscape brands/icon.svg -o brands/icon@2x.png -w 512 -h 512
-inkscape brands/icon.svg -o brands/icon.png    -w 256 -h 256
-cp brands/icon.png brands/logo.png
-cp brands/icon@2x.png brands/logo@2x.png
+inkscape brands/icon.svg -o custom_components/tplink_legacy/brand/icon@2x.png -w 512 -h 512
+inkscape brands/icon.svg -o custom_components/tplink_legacy/brand/icon.png    -w 256 -h 256
+cp custom_components/tplink_legacy/brand/icon.png    custom_components/tplink_legacy/brand/logo.png
+cp custom_components/tplink_legacy/brand/icon@2x.png custom_components/tplink_legacy/brand/logo@2x.png
 ```
-
-Entity icons need no such step: they ship in
-`custom_components/tplink_legacy/icons.json` and work as soon as the integration
-is installed.

@@ -72,6 +72,14 @@
       },
       "lan_ip": {
         "name": "Local IP address"
+      },
+      "etat_donnees": {
+        "name": "Data status",
+        "state": {
+          "complet": "Complete",
+          "partiel": "Partial",
+          "injoignable": "Unreachable"
+        }
       }
     },
     "binary_sensor": {

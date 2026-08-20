@@ -15,6 +15,13 @@
       },
       "lan_ip": {
         "default": "mdi:ip-network"
+      },
+      "etat_donnees": {
+        "default": "mdi:database-check",
+        "state": {
+          "partiel": "mdi:database-alert",
+          "injoignable": "mdi:database-off"
+        }
       }
     },
     "binary_sensor": {

@@ -338,3 +338,36 @@ async def test_repair_issue_when_router_refuses_sections(
     await hass.async_block_till_done()
 
     assert registry.async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_capteur_etat_des_donnees(hass: HomeAssistant, mock_router) -> None:
+    """Un état lisible en un coup d'œil, y compris routeur injoignable."""
+    from custom_components.tplink_legacy.api import TpLinkError
+
+    entry = await _setup(hass)
+    etat = "sensor.tl_wr841n_data_status"
+
+    assert hass.states.get(etat).state == "complet"
+
+    # le routeur ne livre plus qu'une partie
+    mock_router.get_status.return_value = {
+        **STATUS, "lan": None, "wireless": None,
+        "errors": {"lan": {"message": "HTTP 500"}, "wireless": {"message": "HTTP 500"}},
+    }
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    state = hass.states.get(etat)
+    assert state.state == "partiel"
+    assert state.attributes["sections_refusees"] == ["lan", "wireless"]
+
+    # routeur totalement injoignable : le capteur reste lisible
+    mock_router.get_status.side_effect = TpLinkError("injoignable")
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    state = hass.states.get(etat)
+    assert state.state == "injoignable"
+    assert state.attributes["derniere_erreur"] is not None
+    # les autres capteurs passent indisponibles, celui-ci non
+    assert hass.states.get("sensor.tl_wr841n_connected_devices").state == "unavailable"

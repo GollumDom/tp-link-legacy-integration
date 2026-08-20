@@ -29,6 +29,15 @@ class TpLinkSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
 
 
+def _etat(status: dict[str, Any]) -> str:
+    """Résume en un mot ce que le routeur a réellement livré au dernier relevé."""
+    if status.get("errors"):
+        return "partiel"
+    if status.get("stale"):
+        return "partiel"
+    return "complet"
+
+
 def _uptime(status: dict[str, Any]) -> datetime | None:
     seconds = (status.get("info") or {}).get("uptime")
     if seconds is None:
@@ -37,6 +46,13 @@ def _uptime(status: dict[str, Any]) -> datetime | None:
 
 
 SENSORS: tuple[TpLinkSensorDescription, ...] = (
+    TpLinkSensorDescription(
+        key="etat_donnees",
+        translation_key="etat_donnees",
+        device_class=SensorDeviceClass.ENUM,
+        options=["complet", "partiel", "injoignable"],
+        value_fn=_etat,
+    ),
     TpLinkSensorDescription(
         key="clients",
         translation_key="clients",
@@ -92,5 +108,28 @@ class TpLinkLegacySensor(TpLinkLegacyEntity, SensorEntity):
         self.entity_description = description
 
     @property
+    def available(self) -> bool:
+        # Le capteur d'état doit rester lisible quand le routeur ne répond plus :
+        # c'est précisément le moment où l'on veut le consulter.
+        if self.entity_description.key == "etat_donnees":
+            return True
+        return super().available
+
+    @property
     def native_value(self) -> Any:
+        if self.entity_description.key == "etat_donnees" and not self.coordinator.last_update_success:
+            return "injoignable"
         return self.entity_description.value_fn(self._status)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.key != "etat_donnees":
+            return None
+        status = self._status
+        return {
+            "sections_refusees": sorted(status.get("errors") or {}) or None,
+            "sections_non_rafraichies": status.get("stale") or None,
+            "derniere_erreur": str(self.coordinator.last_exception)
+            if self.coordinator.last_exception
+            else None,
+        }

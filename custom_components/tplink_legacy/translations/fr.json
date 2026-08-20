@@ -72,6 +72,14 @@
       },
       "lan_ip": {
         "name": "Adresse IP locale"
+      },
+      "etat_donnees": {
+        "name": "État des données",
+        "state": {
+          "complet": "Complet",
+          "partiel": "Partiel",
+          "injoignable": "Injoignable"
+        }
       }
     },
     "binary_sensor": {

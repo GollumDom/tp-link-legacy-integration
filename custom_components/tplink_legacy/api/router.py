@@ -236,6 +236,10 @@ def _build_wireless(
             "isolateClients": _bool(radio.get("X_TP_IsolateClients")),
             "wmm": _bool(radio.get("WMMEnable")),
             "region": (radio.get("regulatoryDomain") or "").strip() or None,
+            # Le firmware est commun à plusieurs modèles et déclare une radio
+            # 5 GHz même sur les mono-bande. Une radio réellement présente
+            # annonce ses débits ; une radio fantôme rend une liste vide.
+            "present": bool((radio.get("possibleDataTransmitRates") or "").strip()),
         }
         if include_secrets:
             entry["passphrase"] = radio.get("X_TP_PreSharedKey")

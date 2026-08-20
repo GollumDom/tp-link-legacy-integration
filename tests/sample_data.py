@@ -43,6 +43,7 @@ STATUS = {
             "bandwidth": "20M",
             "hidden": False,
             "security": {"mode": "WPA2-PSK"},
+            "present": True,
         },
         {
             "stack": "1,2,0,0,0,0",
@@ -54,6 +55,7 @@ STATUS = {
             "bandwidth": "40M",
             "hidden": False,
             "security": {"mode": "WPA2-PSK"},
+            "present": False,
         },
     ],
     "clients": [

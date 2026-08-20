@@ -416,3 +416,20 @@ class TestStatusEnUnLot(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("subnetMask", ATTRS_WAN_PPP)
         self.assertIn("remoteIPAddress", ATTRS_WAN_PPP)
+
+
+class TestRadioFantome(unittest.IsolatedAsyncioTestCase):
+    """Une radio déclarée sans matériel derrière n'annonce aucun débit."""
+
+    async def test_presence_deduite_des_debits(self):
+        router = build_router({
+            "LAN_WLAN": [
+                {"__stack": "1,1,0,0,0,0", "SSID": "reelle", "X_TP_Band": "2.4GHz",
+                 "possibleDataTransmitRates": "5.5,12,18,24"},
+                {"__stack": "1,2,0,0,0,0", "SSID": "fantome", "X_TP_Band": "5GHz",
+                 "possibleDataTransmitRates": ""},
+            ]
+        })
+        radios = await router.get_wireless()
+        self.assertTrue(radios[0]["present"])
+        self.assertFalse(radios[1]["present"])

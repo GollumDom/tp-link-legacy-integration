@@ -75,7 +75,9 @@ async def test_one_switch_per_radio_with_attributes(
     radio_5 = hass.states.get("switch.tl_wr841n_wi_fi_5ghz")
 
     assert radio_24.state == STATE_ON
-    assert radio_5.state == STATE_OFF
+    # la 5 GHz du jeu d'essai est déclarée par le firmware sans matériel
+    # derrière : l'entité existe mais reste grisée
+    assert radio_5.state == "unavailable"
     assert radio_24.attributes["ssid"] == "MAISONDOMO_1"
     assert radio_24.attributes["channel"] == 13
     assert radio_24.attributes["security"] == "WPA2-PSK"
@@ -371,3 +373,23 @@ async def test_capteur_etat_des_donnees(hass: HomeAssistant, mock_router) -> Non
     assert state.attributes["derniere_erreur"] is not None
     # les autres capteurs passent indisponibles, celui-ci non
     assert hass.states.get("sensor.tl_wr841n_connected_devices").state == "unavailable"
+
+
+async def test_radio_absente_du_materiel_est_grisee(
+    hass: HomeAssistant, mock_router
+) -> None:
+    """Le firmware déclare une radio 5 GHz même sur les modèles mono-bande.
+
+    L'entité reste visible — pour que l'absence soit explicite — mais grisée.
+    """
+    await _setup(hass)
+
+    presente = hass.states.get("switch.tl_wr841n_wi_fi_2_4ghz")
+    fantome = hass.states.get("switch.tl_wr841n_wi_fi_5ghz")
+
+    assert presente.state == STATE_ON
+    assert presente.attributes["materiel_present"] is True
+
+    # créée et visible, mais non manipulable
+    assert fantome is not None
+    assert fantome.state == "unavailable"

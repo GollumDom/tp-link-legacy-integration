@@ -97,7 +97,14 @@ class TpLinkLegacyWirelessSwitch(TpLinkLegacyEntity, SwitchEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self._radio is not None
+        radio = self._radio
+        if radio is None:
+            return False
+        # Radio déclarée par le firmware mais absente du matériel : l'entité
+        # reste visible, grisée, plutôt que de disparaître sans explication.
+        if not radio.get("present", True):
+            return False
+        return super().available
 
     @property
     def is_on(self) -> bool | None:
@@ -116,6 +123,7 @@ class TpLinkLegacyWirelessSwitch(TpLinkLegacyEntity, SwitchEntity):
             "bandwidth": radio.get("bandwidth"),
             "security": (radio.get("security") or {}).get("mode"),
             "hidden": radio.get("hidden"),
+            "materiel_present": radio.get("present", True),
         }
 
     async def _async_set(self, enabled: bool) -> None:

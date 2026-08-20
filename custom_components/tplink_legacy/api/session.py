@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import re
 import secrets
 from typing import Any, Final, Iterable, Mapping, Sequence
 
@@ -31,6 +32,7 @@ from cryptography.hazmat.primitives import padding as sym_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from .error_codes import error_name
+from .connection import Connection, LOGIN_SCRIPTS
 from .errors import TpLinkAuthError, TpLinkError, TpLinkProtocolError
 from .http import request
 
@@ -376,57 +378,123 @@ class TpLinkSession:
 
     async def login(self) -> bool:
         """
-        Ouvre une session.
+        Ouvre une session, en imitant le parcours d'un navigateur.
 
-        .. warning::
-           Le firmware verrouille l'interface web pendant 2 heures après 10
-           échecs consécutifs : vérifiez le mot de passe avant de boucler.
+        La page de login, ses scripts et l'authentification sont envoyés sur
+        **une seule connexion TCP maintenue ouverte**. C'est indispensable : une
+        authentification menée sur des connexions séparées réussit — ``ret=0``,
+        cookie, ``userType="Admin"`` — mais n'obtient ensuite que le modèle, le
+        micrologiciel et le mode, tout le reste répondant ``HTTP 500``. Le
+        routeur mémorise l'autorisation pour le couple (adresse source, routeur)
+        et la perd à son redémarrage.
+
+        ⚠️ Le firmware verrouille l'interface deux heures après dix échecs
+        consécutifs : vérifiez le mot de passe avant de boucler.
         """
         self.cookie = None
         self.logged_in = False
 
-        await self.fetch_params()
-
-        self.aes_key = _random_digits(16)
-        self.aes_iv = _random_digits(16)
-        self.hash = hashlib.md5(
-            (self.username + self.password).encode("utf-8")
-        ).hexdigest()
-
-        actions = [
-            Action(
-                ACT.CGI,
-                "/cgi/login",
-                attrs={"username": self.username, "password": self.password},
-            )
-        ]
-
-        body = self._encrypt_body(self.build_payload(actions))
-        raw = await self._http("/cgi_gdpr", body)
-
         try:
-            decrypted = self._decrypt_body(raw)
-        except Exception as err:  # noqa: BLE001
-            raise TpLinkAuthError(
-                f"Login refusé sur {self.host} : réponse illisible (mot de passe "
-                "incorrect, ou interface verrouillée après 10 échecs)",
-                host=self.host,
-            ) from err
+            async with Connection(self.host, timeout=self.timeout) as conn:
+                # 1. la page de login et ses scripts, comme le ferait un navigateur
+                await conn.request("GET", "/")
+                for script in LOGIN_SCRIPTS:
+                    await conn.request("GET", f"/js/{script}")
 
-        response = self.parse_response(decrypted, actions)
-        if response.ret != 0:
-            raise TpLinkAuthError(
-                f"Login refusé sur {self.host} : {_describe_code(response.ret)}",
-                host=self.host,
-                code=response.ret,
-            )
-        if not self.cookie:
-            raise TpLinkAuthError(
-                f"Login sans cookie de session sur {self.host}", host=self.host
-            )
+                # 2. les paramètres de chiffrement
+                params = await conn.request(
+                    "POST",
+                    "/cgi?8",
+                    body=f"[/cgi/getParm#{DEFAULT_STACK}#{DEFAULT_STACK}]0,0\r\n",
+                    content_type="text/plain",
+                )
+                self._read_params(params.body)
+
+                self.aes_key = _random_digits(16)
+                self.aes_iv = _random_digits(16)
+                self.hash = hashlib.md5(
+                    (self.username + self.password).encode("utf-8")
+                ).hexdigest()
+
+                # 3. l'authentification, sur cette même connexion
+                actions = [
+                    Action(
+                        type=ACT.CGI,
+                        oid="/cgi/login",
+                        attrs={"username": self.username, "password": self.password},
+                    )
+                ]
+                answer = await conn.request(
+                    "POST",
+                    "/cgi_gdpr",
+                    body=self._encrypt_body(self.build_payload(actions)),
+                    content_type="text/plain",
+                )
+                self.cookie = conn.cookie
+
+                if answer.status != 200 or not self.cookie:
+                    raise TpLinkAuthError(
+                        f"Login refusé sur {self.host} "
+                        f"(HTTP {answer.status}, mot de passe incorrect "
+                        f"ou interface verrouillée après 10 échecs)",
+                        host=self.host,
+                    )
+
+                try:
+                    decrypted = self._decrypt_body(answer.body)
+                except Exception as err:
+                    raise TpLinkAuthError(
+                        f"Login refusé sur {self.host} : réponse illisible",
+                        host=self.host,
+                    ) from err
+
+                ret = self.parse_response(decrypted, actions).ret
+                if ret != 0:
+                    raise TpLinkAuthError(
+                        f"Login refusé sur {self.host} : {_describe_code(ret)}",
+                        host=self.host,
+                        code=ret,
+                    )
+
+                # 4. la frame d'administration, puis une première lecture
+                #    protégée sur cette même connexion : c'est elle qui scelle
+                #    l'autorisation côté routeur.
+                await conn.request("GET", "/mainFrame.htm")
+                try:
+                    await conn.request(
+                        "POST",
+                        "/cgi_gdpr",
+                        body=self._encrypt_body(
+                            self.build_payload(
+                                [Action(type=ACT.GL, oid="LAN_WLAN", attrs=["SSID"])]
+                            )
+                        ),
+                        content_type="text/plain",
+                    )
+                except Exception:  # noqa: BLE001
+                    # Le routeur peut la refuser ; le login reste valable.
+                    pass
+
+        except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as err:
+            raise TpLinkError(
+                f"Routeur {self.host} injoignable : {err}", host=self.host
+            ) from err
 
         self.logged_in = True
         return True
+
+    def _read_params(self, body: str) -> None:
+        """Extrait ``nn`` / ``ee`` / ``seq`` de la réponse de ``/cgi/getParm``."""
+        nn = re.search(r'var nn\s*=\s*"([^"]+)"', body)
+        ee = re.search(r'var ee\s*=\s*"([^"]+)"', body)
+        seq = re.search(r'var seq\s*=\s*"?(\d+)"?', body)
+        if not (nn and ee and seq):
+            raise TpLinkProtocolError(
+                f"Réponse /cgi/getParm inattendue sur {self.host} — "
+                "firmware non supporté",
+                host=self.host,
+            )
+        self.rsa_n, self.rsa_e, self.seq = nn.group(1), ee.group(1), int(seq.group(1))
 
     async def logout(self) -> None:
         """Ferme la session côté routeur (libère le slot administrateur)."""

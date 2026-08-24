@@ -12,6 +12,7 @@ __all__ = [
     "TpLinkError",
     "TpLinkAuthError",
     "TpLinkProtocolError",
+    "TpLinkUnreachableError",
 ]
 
 
@@ -53,3 +54,13 @@ class TpLinkAuthError(TpLinkError):
 
 class TpLinkProtocolError(TpLinkError):
     """Réponse HTTP ou format inattendu (firmware non supporté, session perdue)."""
+
+
+class TpLinkUnreachableError(TpLinkError):
+    """Le routeur n'a pas répondu du tout : socket refusée, coupée, ou délai dépassé.
+
+    À distinguer d'un refus applicatif : le routeur qui répond ``500`` sur une
+    section peut en livrer d'autres, alors qu'un httpd muet ne livrera rien.
+    Insister ne fait qu'aggraver son cas — ces firmwares ne tiennent qu'une
+    poignée de sockets.
+    """

@@ -27,7 +27,12 @@ libère le slot administrateur du routeur, qui n'en a qu'un.
 from __future__ import annotations
 
 from .error_codes import ERROR_CODES, error_name
-from .errors import TpLinkAuthError, TpLinkError, TpLinkProtocolError
+from .errors import (
+    TpLinkAuthError,
+    TpLinkError,
+    TpLinkProtocolError,
+    TpLinkUnreachableError,
+)
 from .oids import OID
 from .router import TpLinkRouter
 from .rsa import rsa_encrypt_no_padding
@@ -45,6 +50,7 @@ __all__ = [
     "TpLinkResponse",
     "TpLinkRouter",
     "TpLinkSession",
+    "TpLinkUnreachableError",
     "error_name",
     "rsa_encrypt_no_padding",
 ]

@@ -8,11 +8,10 @@ exploitables, notamment par une intégration Home Assistant.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Callable, Final, Mapping, Sequence
 
-from .errors import TpLinkError
+from .errors import TpLinkError, TpLinkUnreachableError
 from .oids import OID
 from .session import ACT, OP, Action, TpLinkSession, is_disconnect_error
 
@@ -59,15 +58,25 @@ def _ip_sort_key(ip: str | None) -> tuple:
     return (0, ip)
 
 
-async def _safe(coro, default):
+#: Marque une lecture facultative qui a échoué — à distinguer d'une lecture
+#: réussie mais vide, qui est une réponse légitime du routeur.
+_REFUSED: Final = object()
+
+
+async def _safe(coro, default=_REFUSED):
     """Exécute ``coro`` et rend ``default`` en cas d'échec.
 
     Équivalent des ``.catch(() => …)`` du JS : sur ce firmware, plusieurs OID
     n'existent que sur certains modèles, et leur absence ne doit pas faire
     tomber la lecture complète.
+
+    Un routeur muet, lui, ne se rattrape pas : l'injoignabilité traverse, sans
+    quoi une section rendrait un objet vide indiscernable d'une lecture réussie.
     """
     try:
         return await coro
+    except TpLinkUnreachableError:
+        raise
     except Exception:  # noqa: BLE001
         return default
 
@@ -353,20 +362,21 @@ class TpLinkRouter:
 
     async def get_info(self) -> dict[str, Any]:
         """Modèle, versions, temps de fonctionnement et adresse MAC."""
-        info, sys_cfg, mode = await asyncio.gather(
-            self.session.get(OID.IGD_DEV_INFO, attrs=ATTRS_INFO),
-            _safe(self.session.get(OID.SYS_CFG, attrs=["flashMac"]), None),
-            _safe(self.session.get(OID.MULTIMODE, attrs=["mode"]), None),
-        )
+        # Séquentiel : le httpd du routeur ne traite qu'une requête à la fois,
+        # et la session les sérialise de toute façon. Un `gather` ne gagnait
+        # rien et, dès qu'une branche levait, laissait les autres tourner seules.
+        info = await self.session.get(OID.IGD_DEV_INFO, attrs=ATTRS_INFO)
+        sys_cfg = await _safe(self.session.get(OID.SYS_CFG, attrs=["flashMac"]), None)
+        mode = await _safe(self.session.get(OID.MULTIMODE, attrs=["mode"]), None)
         return _build_info(self.host, info, sys_cfg, mode)
 
     # ----------------------------------------------------------------- LAN --
 
     async def get_lan(self) -> dict[str, Any]:
         """Adressage LAN et état du serveur DHCP."""
-        intf, dhcp = await asyncio.gather(
-            self.session.get_list(OID.LAN_IP_INTF, attrs=ATTRS_LAN_INTF),
-            _safe(self.session.get_list(OID.LAN_HOST_CFG, attrs=["DHCPServerEnable"]), []),
+        intf = await self.session.get_list(OID.LAN_IP_INTF, attrs=ATTRS_LAN_INTF)
+        dhcp = await _safe(
+            self.session.get_list(OID.LAN_HOST_CFG, attrs=["DHCPServerEnable"]), []
         )
 
         return _build_lan(intf, dhcp)
@@ -397,14 +407,28 @@ class TpLinkRouter:
         PPPoE…) dont un seul est actif : on renvoie celui qui est activé et
         connecté.
         """
-        ip_conns, ppp_conns, common, eth = await asyncio.gather(
-            _safe(self.session.get_list(OID.WAN_IP_CONN, attrs=ATTRS_WAN_IP), []),
-            _safe(self.session.get_list(OID.WAN_PPP_CONN, attrs=ATTRS_WAN_PPP), []),
-            _safe(
-                self.session.get_list(OID.WAN_COMMON_INTF_CFG, attrs=["WANAccessType"]),
-                [],
-            ),
-            _safe(self.session.get_list(OID.WAN_ETH_INTF, attrs=ATTRS_ETH), []),
+        ip_conns = await _safe(
+            self.session.get_list(OID.WAN_IP_CONN, attrs=ATTRS_WAN_IP)
+        )
+        ppp_conns = await _safe(
+            self.session.get_list(OID.WAN_PPP_CONN, attrs=ATTRS_WAN_PPP)
+        )
+        common = await _safe(
+            self.session.get_list(OID.WAN_COMMON_INTF_CFG, attrs=["WANAccessType"])
+        )
+        eth = await _safe(self.session.get_list(OID.WAN_ETH_INTF, attrs=ATTRS_ETH))
+
+        reads = (ip_conns, ppp_conns, common, eth)
+        # Aucun profil lisible : le routeur a tout refusé. Rendre un WAN vide
+        # ferait passer un refus pour un « pas de connexion Internet ».
+        if all(read is _REFUSED for read in reads):
+            raise TpLinkError(
+                f"Le routeur {self.host} n'a livré aucune information WAN",
+                host=self.host,
+            )
+
+        ip_conns, ppp_conns, common, eth = (
+            [] if read is _REFUSED else read for read in reads
         )
         return _build_wan(ip_conns, ppp_conns, common, eth)
 
@@ -485,12 +509,22 @@ class TpLinkRouter:
 
         C'est la vue utile pour le suivi de présence dans Home Assistant.
         """
-        leases, wireless = await asyncio.gather(
-            _safe(self.get_dhcp_leases(), []),
-            _safe(self.get_wireless_clients(), []),
-        )
+        leases = await _safe(self.get_dhcp_leases())
+        wireless = await _safe(self.get_wireless_clients())
 
-        return _merge_clients(leases, wireless)
+        # Ni baux DHCP ni stations associées : c'est un refus, pas un routeur
+        # sans client. Le distinguer évite de faire passer tout le monde
+        # « absent » dans le suivi de présence.
+        if leases is _REFUSED and wireless is _REFUSED:
+            raise TpLinkError(
+                f"Le routeur {self.host} n'a livré aucune liste de clients",
+                host=self.host,
+            )
+
+        return _merge_clients(
+            [] if leases is _REFUSED else leases,
+            [] if wireless is _REFUSED else wireless,
+        )
 
     # ------------------------------------------------------------- Synthèse --
 
@@ -525,6 +559,10 @@ class TpLinkRouter:
         """
         try:
             return await self._status_batched(include_secrets=include_secrets)
+        except TpLinkUnreachableError:
+            # Routeur muet : relire section par section, c'est douze fois le même
+            # délai d'attente pour douze fois rien.
+            raise
         except TpLinkError as err:
             _LOGGER.debug(
                 "Lot unique refusé par %s (%s) : lecture section par section",
@@ -572,12 +610,24 @@ class TpLinkRouter:
         for key, load in sections.items():
             try:
                 status[key] = await load()
+            except TpLinkUnreachableError:
+                # Le routeur a cessé de répondre en cours de lecture : les
+                # sections suivantes attendraient leur délai pour rien.
+                raise
             except TpLinkError as err:
                 status[key] = None
                 errors[key] = err.to_dict()
             except Exception as err:  # noqa: BLE001
                 status[key] = None
                 errors[key] = {"message": str(err)}
+
+        if len(errors) == len(sections):
+            # Rien du tout : c'est un échec de relevé, pas un relevé partiel.
+            # Le signaler évite d'afficher indéfiniment des valeurs figées.
+            raise TpLinkError(
+                f"Le routeur {self.host} n'a livré aucune section",
+                host=self.host,
+            )
 
         if errors:
             status["errors"] = errors

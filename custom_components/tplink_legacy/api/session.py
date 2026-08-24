@@ -33,7 +33,12 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from .error_codes import error_name
 from .connection import Connection, LOGIN_SCRIPTS
-from .errors import TpLinkAuthError, TpLinkError, TpLinkProtocolError
+from .errors import (
+    TpLinkAuthError,
+    TpLinkError,
+    TpLinkProtocolError,
+    TpLinkUnreachableError,
+)
 from .http import request
 
 __all__ = ["ACT", "OP", "Action", "TpLinkResponse", "TpLinkSession"]
@@ -66,6 +71,19 @@ DEFAULT_STACK: Final = "0,0,0,0,0,0"
 #: 71145 (ERR_USER_NOT_LOGIN) n'est pas dans la table de ``err.js`` : le firmware
 #: l'émet sans le déclarer, d'où sa présence en dur ici comme dans le JS.
 SESSION_ERRORS: Final = frozenset({-40101, -40102, -40103, -40104, -40401, 71145})
+
+#: Délai d'attente avant de retenter une ouverture de session, après un échec
+#: réseau. Sans lui, une lecture complète qui échoue relance une authentification
+#: — treize requêtes HTTP — pour *chacune* de ses douze sections : le httpd du
+#: routeur, qui ne tient qu'une poignée de sockets, finit par ne plus répondre
+#: du tout. Une fois muet, il l'est jusqu'à son redémarrage.
+LOGIN_COOLDOWN: Final = 60.0
+
+#: Âge minimal d'une session avant qu'un refus du routeur soit interprété comme
+#: une expiration. Une session ouverte à l'instant qui se voit répondre ``500``
+#: n'a pas expiré : le routeur refuse la lecture. Se réauthentifier n'y change
+#: rien et coûte treize requêtes de plus.
+RELOGIN_MIN_AGE: Final = 15.0
 
 #: Fragments de message signalant que le routeur a coupé la connexion : attendu
 #: pendant un redémarrage, ce n'est pas une erreur.
@@ -147,6 +165,12 @@ class TpLinkSession:
         # chaînait des promesses ; un `Lock` dit la même chose en plus clair.
         self._lock = asyncio.Lock()
 
+        #: Instant (horloge de la boucle) avant lequel toute nouvelle tentative
+        #: d'authentification est refusée d'emblée : voir `LOGIN_COOLDOWN`.
+        self._login_blocked_until = 0.0
+        #: Instant de la dernière authentification réussie : voir `RELOGIN_MIN_AGE`.
+        self._logged_in_at = 0.0
+
     # ---------------------------------------------------------------- HTTP --
 
     async def _http(self, path: str, body: str | None) -> str:
@@ -168,7 +192,7 @@ class TpLinkSession:
                 timeout=self.timeout,
             )
         except Exception as err:  # noqa: BLE001 — on ré-emballe tout échec réseau
-            raise TpLinkError(
+            raise TpLinkUnreachableError(
                 f"Routeur {self.host} injoignable : {err}",
                 host=self.host,
             ) from err
@@ -394,6 +418,16 @@ class TpLinkSession:
         self.cookie = None
         self.logged_in = False
 
+        loop_time = asyncio.get_running_loop().time()
+        if loop_time < self._login_blocked_until:
+            # Le routeur ne répondait pas il y a moins d'une minute : on ne lui
+            # ouvre pas une nouvelle salve de connexions pour le vérifier.
+            raise TpLinkUnreachableError(
+                f"Routeur {self.host} injoignable : "
+                f"nouvelle tentative dans {self._login_blocked_until - loop_time:.0f} s",
+                host=self.host,
+            )
+
         try:
             async with Connection(self.host, timeout=self.timeout) as conn:
                 # 1. la page de login et ses scripts, comme le ferait un navigateur
@@ -476,10 +510,15 @@ class TpLinkSession:
                     pass
 
         except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError) as err:
-            raise TpLinkError(
+            self._login_blocked_until = (
+                asyncio.get_running_loop().time() + LOGIN_COOLDOWN
+            )
+            raise TpLinkUnreachableError(
                 f"Routeur {self.host} injoignable : {err}", host=self.host
             ) from err
 
+        self._login_blocked_until = 0.0
+        self._logged_in_at = asyncio.get_running_loop().time()
         self.logged_in = True
         return True
 
@@ -543,11 +582,16 @@ class TpLinkSession:
                 response = await self._send(actions_list)
             except (TpLinkAuthError, TpLinkProtocolError):
                 # Session perdue : le routeur répond 500 ou renvoie du binaire illisible.
+                # Sauf si elle vient d'être ouverte — c'est alors un refus de
+                # lecture, que rien ne fera passer, et rouvrir une session pour
+                # chaque section refusée noie le httpd du routeur.
+                if not self._session_may_have_expired():
+                    raise
                 self.logged_in = False
                 await self.login()
                 response = await self._send(actions_list)
 
-            if response.ret in SESSION_ERRORS:
+            if response.ret in SESSION_ERRORS and self._session_may_have_expired():
                 self.logged_in = False
                 await self.login()
                 response = await self._send(actions_list)
@@ -560,6 +604,12 @@ class TpLinkSession:
                     code=response.ret,
                 )
             return response
+
+    def _session_may_have_expired(self) -> bool:
+        """La session est-elle assez ancienne pour avoir pu expirer ?"""
+        return (
+            asyncio.get_running_loop().time() - self._logged_in_at >= RELOGIN_MIN_AGE
+        )
 
     async def get(
         self,

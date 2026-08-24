@@ -19,7 +19,7 @@ connexion invalide la précédente, sans prévenir. Ouvrez l'interface web du
 routeur pendant que Home Assistant l'interroge et les deux s'évincent toutes les
 trente secondes — ce qui se voit sous forme d'entités qui se vident au hasard.
 
-Deux mécanismes limitent la casse :
+Trois mécanismes limitent la casse :
 
 - L'instantané complet est lu en **une seule requête** au lieu d'une douzaine,
   ce qui réduit au minimum la fenêtre pendant laquelle une éviction peut tomber.
@@ -27,6 +27,11 @@ Deux mécanismes limitent la casse :
   avant d'ouvrir l'interface web : l'intégration rend sa session immédiatement
   et cesse d'interroger jusqu'à ce que vous le rallumiez. L'état survit à un
   redémarrage.
+- Un routeur qui cesse de répondre est **laissé tranquille** : les relevés
+  s'espacent jusqu'à dix minutes, et aucune nouvelle session n'est ouverte
+  pendant la minute qui suit un échec. Ces httpd ne tiennent qu'une poignée de
+  sockets — insister toutes les trente secondes finit par en rendre un
+  définitivement muet, jusqu'à coupure de son alimentation.
 
 Rien de tout cela ne dépend du sous-réseau sur lequel se trouve Home Assistant :
 le routeur est joignable et entièrement lisible à travers un réseau routé.
@@ -196,10 +201,11 @@ pip install -r requirements-test.txt
 pytest
 ```
 
-53 tests : le protocole et l'API haut niveau sans routeur, plus l'intégration
+71 tests : le protocole et l'API haut niveau sans routeur, plus l'intégration
 elle-même chargée dans une vraie instance Home Assistant — assistant de
-configuration, détection, ré-authentification, options, chaque entité, et le cas
-dégradé où le routeur refuse les données personnelles.
+configuration, détection, ré-authentification, options, chaque entité, le cas
+dégradé où le routeur refuse les données personnelles, et celui où il cesse
+complètement de répondre.
 
 Les seuls tests de protocole se passent de Home Assistant :
 

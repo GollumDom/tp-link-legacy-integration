@@ -23,7 +23,7 @@ invalidates the previous one — silently. Open the router's web interface while
 Home Assistant is polling and the two evict each other every thirty seconds,
 which shows up as entities that go blank at random.
 
-Two things keep that under control:
+Three things keep that under control:
 
 - The whole snapshot is read in **one single request** instead of a dozen, so
   the window during which an eviction can land is as small as possible.
@@ -31,6 +31,10 @@ Two things keep that under control:
   logging into the web interface; the integration releases its session
   immediately and stops polling until you turn it back on. The state survives a
   restart.
+- A router that stops answering is **left alone**: reads back off up to ten
+  minutes apart, and no new session is opened for a minute after a failed one.
+  These httpds hold only a handful of sockets — keep knocking every thirty
+  seconds and one eventually goes silent for good, until it is power-cycled.
 
 Nothing here depends on which subnet Home Assistant sits on — the router is
 reachable and fully readable across a routed network.
@@ -195,10 +199,10 @@ pip install -r requirements-test.txt
 pytest
 ```
 
-53 tests: the protocol and the high-level API without any router, plus the
+71 tests: the protocol and the high-level API without any router, plus the
 integration itself loaded inside a real Home Assistant instance — config flow,
-discovery, re-authentication, options, every entity, and the degraded case where
-the router refuses personal data.
+discovery, re-authentication, options, every entity, the degraded case where the
+router refuses personal data, and the one where it stops answering altogether.
 
 The protocol tests alone need no Home Assistant:
 

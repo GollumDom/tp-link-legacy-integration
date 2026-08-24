@@ -393,3 +393,74 @@ async def test_radio_absente_du_materiel_est_grisee(
     # créée et visible, mais non manipulable
     assert fantome is not None
     assert fantome.state == "unavailable"
+
+
+async def test_up_since_ne_derive_pas_quand_info_est_conservee(
+    hass: HomeAssistant, mock_router, freezer
+) -> None:
+    """Le firmware donne une durée, pas une date.
+
+    Recalculer « maintenant moins la durée » sur une durée conservée du relevé
+    précédent ferait avancer l'instant de démarrage au rythme de l'horloge : le
+    routeur paraîtrait redémarrer à chaque relevé.
+    """
+    entry = await _setup(hass)
+    up_since = hass.states.get("sensor.tl_wr841n_up_since").state
+    assert up_since not in (None, "unknown")
+
+    # dix minutes plus tard, le routeur refuse la section « info »
+    freezer.tick(600)
+    mock_router.get_status.return_value = {
+        "host": "192.168.11.1",
+        "name": "192.168.11.1",
+        "info": None,
+        "lan": STATUS["lan"],
+        "wan": STATUS["wan"],
+        "wireless": STATUS["wireless"],
+        "clients": STATUS["clients"],
+        "clientCount": STATUS["clientCount"],
+        "errors": {"info": {"message": "HTTP 500"}},
+    }
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get("sensor.tl_wr841n_up_since").state == up_since
+
+
+async def test_polling_recule_quand_le_routeur_ne_repond_plus(
+    hass: HomeAssistant, mock_router
+) -> None:
+    """Insister toutes les trente secondes achève le httpd au lieu de le réveiller."""
+    from custom_components.tplink_legacy.api import TpLinkError
+
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    normal = coordinator.update_interval
+
+    mock_router.get_status.side_effect = TpLinkError("injoignable")
+    await coordinator.async_refresh()
+    first_backoff = coordinator.update_interval
+    assert first_backoff > normal
+
+    await coordinator.async_refresh()
+    assert coordinator.update_interval > first_backoff
+
+    # le routeur revient : on reprend le rythme normal
+    mock_router.get_status.side_effect = None
+    await coordinator.async_refresh()
+    assert coordinator.update_interval == normal
+
+
+async def test_le_recul_ne_relance_pas_une_interrogation_suspendue(
+    hass: HomeAssistant, mock_router
+) -> None:
+    from custom_components.tplink_legacy.api import TpLinkError
+
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.set_polling(False)
+
+    mock_router.get_status.side_effect = TpLinkError("injoignable")
+    await coordinator.async_refresh()
+
+    assert coordinator.update_interval is None

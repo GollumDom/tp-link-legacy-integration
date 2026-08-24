@@ -16,6 +16,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
@@ -29,6 +30,16 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+#: Plafond du recul entre deux relevés après des échecs répétés. Le httpd de ces
+#: routeurs ne tient qu'une poignée de sockets : insister toutes les trente
+#: secondes sur un routeur qui ne répond plus l'achève au lieu de le réveiller.
+MAX_BACKOFF = timedelta(minutes=10)
+
+#: Tolérance sur l'horodatage de démarrage. Le firmware compte en secondes
+#: entières et l'aller-retour réseau varie : sans marge, « Démarré le » oscille
+#: d'une seconde à chaque relevé et sature l'historique.
+BOOT_TIME_DRIFT = timedelta(seconds=5)
 
 
 class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -50,6 +61,7 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # devenir « absent », pas cesser d'exister.
         self.known_clients: set[str] = set()
         self._warned_restricted = False
+        self._failures = 0
 
         seconds = entry.options.get(CONF_SCAN_INTERVAL)
         self._interval = (
@@ -65,6 +77,40 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
+        try:
+            status = await self._async_read_router()
+        except Exception:
+            self._back_off()
+            raise
+        self._back_off(recovered=True)
+        return status
+
+    def _back_off(self, *, recovered: bool = False) -> None:
+        """Espace les relevés tant que le routeur ne répond pas.
+
+        Ces firmwares ne se contentent pas d'échouer : à force de connexions,
+        leur httpd cesse de répondre à quiconque, et seul un redémarrage le
+        remet en marche. Reculer, c'est lui laisser une chance de revenir.
+        """
+        if recovered:
+            if self._failures:
+                self._failures = 0
+                if self._polling:
+                    self.update_interval = self._interval
+            return
+
+        self._failures += 1
+        interval = min(self._interval * 2 ** min(self._failures, 6), MAX_BACKOFF)
+        if self._polling and interval != self.update_interval:
+            self.update_interval = interval
+            _LOGGER.debug(
+                "Routeur %s muet depuis %d relevés : prochain essai dans %s",
+                self.router.host,
+                self._failures,
+                interval,
+            )
+
+    async def _async_read_router(self) -> dict[str, Any]:
         include_secrets = self.entry.options.get(CONF_INCLUDE_SECRETS, False)
         try:
             status = await self.router.get_status(include_secrets=include_secrets)
@@ -150,6 +196,8 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 status[section] = previous[section]
                 stale.append(section)
 
+        status["bootTime"] = self._boot_time(status, previous, stale)
+
         # Les clients, eux, ne sont pas conservés : un appareil parti doit
         # pouvoir devenir absent, c'est tout l'intérêt du suivi de présence.
         if stale:
@@ -160,6 +208,27 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else previous.get("clientCount")
             )
         return status
+
+    @staticmethod
+    def _boot_time(
+        status: dict[str, Any], previous: dict[str, Any], stale: list[str]
+    ) -> Any:
+        """Instant de démarrage du routeur, figé tant qu'il n'est pas relu.
+
+        Le firmware donne une durée de fonctionnement, pas une date : la date se
+        calcule par différence avec l'heure courante. Refaire ce calcul sur une
+        durée conservée du relevé précédent ferait avancer l'instant de démarrage
+        au rythme de l'horloge — le routeur paraîtrait redémarrer sans cesse.
+        """
+        previous_boot = previous.get("bootTime")
+        uptime = (status.get("info") or {}).get("uptime")
+        if uptime is None or "info" in stale:
+            return previous_boot
+
+        boot = dt_util.utcnow() - timedelta(seconds=int(uptime))
+        if previous_boot is not None and abs(boot - previous_boot) <= BOOT_TIME_DRIFT:
+            return previous_boot
+        return boot
 
     @property
     def polling(self) -> bool:
@@ -180,6 +249,9 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if enabled == self._polling:
             return
         self._polling = enabled
+        # Reprendre repart d'un intervalle normal : le recul accumulé décrivait
+        # un routeur qu'on ne sollicitait plus.
+        self._failures = 0
         # Le setter de `update_interval` reprogramme (ou annule) la minuterie.
         self.update_interval = self._interval if enabled else None
         _LOGGER.debug(

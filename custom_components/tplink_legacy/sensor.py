@@ -39,6 +39,17 @@ def _etat(status: dict[str, Any]) -> str:
 
 
 def _uptime(status: dict[str, Any]) -> datetime | None:
+    """Instant de démarrage, figé par le coordinateur.
+
+    Le calculer ici ferait avancer la date à chaque relevé dès que la durée de
+    fonctionnement est conservée d'un cycle à l'autre — voir
+    `TpLinkLegacyCoordinator._boot_time`.
+    """
+    boot = status.get("bootTime")
+    if boot is not None:
+        return boot
+
+    # Chemin hors Home Assistant (client seul) : pas d'historique à préserver.
     seconds = (status.get("info") or {}).get("uptime")
     if seconds is None:
         return None

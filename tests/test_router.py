@@ -17,16 +17,19 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components" / "tplink_legacy"))
 
-from api.errors import TpLinkError  # noqa: E402
+from api.errors import TpLinkError, TpLinkUnreachableError  # noqa: E402
 from api.router import TpLinkRouter  # noqa: E402
 
 
 class FakeSession:
     """Session simulée : rend des réponses figées, comme le ferait le routeur."""
 
-    def __init__(self, data: dict[str, Any]) -> None:
+    def __init__(self, data: dict[str, Any], *, default: Exception | None = None) -> None:
         self.host = "192.168.0.1"
         self.data = data
+        #: Erreur rendue pour tout OID absent — de quoi simuler un routeur muet
+        #: aussi bien qu'un routeur qui refuse une lecture précise.
+        self.default = default
         self.sets: list[tuple[str, dict, str | None]] = []
         self.logged_in = True
         self.cookie = "JSESSIONID=x"
@@ -34,6 +37,8 @@ class FakeSession:
 
     def _resolve(self, oid: str):
         if oid not in self.data:
+            if self.default is not None:
+                raise self.default
             raise TpLinkError(f"OID absent : {oid}", host=self.host)
         value = self.data[oid]
         if isinstance(value, Exception):
@@ -67,9 +72,9 @@ class FakeSession:
         return SimpleNamespace(ret=0, results=results, script="")
 
 
-def build_router(data: dict[str, Any]) -> TpLinkRouter:
+def build_router(data: dict[str, Any], *, default: Exception | None = None) -> TpLinkRouter:
     router = TpLinkRouter(host="192.168.0.1", password="x")
-    router.session = FakeSession(data)  # type: ignore[assignment]
+    router.session = FakeSession(data, default=default)  # type: ignore[assignment]
     return router
 
 
@@ -355,6 +360,86 @@ class TestStatus(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(status["clientCount"], 1)
         self.assertNotIn("errors", status, "aucune section en échec")
+
+
+class TestRouteurQuiNeRepondPlus(unittest.IsolatedAsyncioTestCase):
+    """Un routeur muet ne doit être ni relancé, ni maquillé en relevé partiel.
+
+    Le httpd de ces firmwares ne tient qu'une poignée de sockets : le repli
+    section par section, c'est douze lectures — et jusqu'à douze ouvertures de
+    session — pour douze fois rien. C'est ainsi qu'un routeur qui répondait mal
+    finit par ne plus répondre du tout.
+    """
+
+    #: Lectures menées par le repli section par section.
+    SECTIONS = 5
+
+    async def test_routeur_muet_abandonne_des_le_lot(self):
+        router = build_router({}, default=TpLinkUnreachableError("injoignable"))
+
+        with self.assertRaises(TpLinkUnreachableError):
+            await router.get_status()
+
+        self.assertEqual(router.session.batches, 1, "un seul essai, puis on renonce")
+
+    async def test_routeur_muet_en_cours_de_repli(self):
+        """Le lot échoue pour une autre raison, puis le routeur se tait."""
+        router = build_router(
+            {"IGD_DEV_INFO": TpLinkError("CMM_INVALID_ARGUMENTS", code=9003)},
+            default=TpLinkUnreachableError("injoignable"),
+        )
+
+        with self.assertRaises(TpLinkUnreachableError):
+            await router.get_status()
+
+    async def test_aucune_section_livree_est_un_echec(self):
+        """Rien de lisible : c'est un relevé raté, pas un relevé partiel."""
+        router = build_router({})
+
+        with self.assertRaises(TpLinkError) as caught:
+            await router.get_status()
+
+        self.assertNotIsInstance(caught.exception, TpLinkUnreachableError)
+        self.assertIn("aucune section", str(caught.exception))
+
+    async def test_wan_entierement_refuse_est_une_section_en_erreur(self):
+        """Un WAN vide se lirait « pas d'Internet » : il faut dire « refusé »."""
+        router = build_router(
+            {
+                "IGD_DEV_INFO": {"modelName": "X", "upTime": "1"},
+                "LAN_IP_INTF": [{}],
+                "LAN_HOST_CFG": [],
+                "LAN_WLAN": [],
+                "LAN_HOST_ENTRY": [],
+                "LAN_WLAN_ASSOC_DEV": [],
+            }
+        )
+
+        status = await router.get_status()
+
+        self.assertIsNone(status["wan"])
+        self.assertIn("wan", status["errors"])
+
+    async def test_clients_entierement_refuses_est_une_section_en_erreur(self):
+        """Sinon tous les appareils suivis passeraient « absents » d'un coup."""
+        router = build_router(
+            {
+                "IGD_DEV_INFO": {"modelName": "X", "upTime": "1"},
+                "LAN_IP_INTF": [{}],
+                "LAN_HOST_CFG": [],
+                "WAN_IP_CONN": [],
+                "WAN_PPP_CONN": [],
+                "WAN_COMMON_INTF_CFG": [],
+                "WAN_ETH_INTF": [],
+                "LAN_WLAN": [],
+            }
+        )
+
+        status = await router.get_status()
+
+        self.assertIsNone(status["clients"])
+        self.assertIn("clients", status["errors"])
+        self.assertIsNone(status["clientCount"])
 
 
 if __name__ == "__main__":

@@ -231,7 +231,10 @@ class TpLinkLegacyOptionsFlow(OptionsFlow):
                             max=MAX_SCAN_INTERVAL,
                             step=5,
                             unit_of_measurement="s",
-                            mode=NumberSelectorMode.SLIDER,
+                            # Saisie directe plutôt qu'un curseur : l'échelle va
+                            # de dix secondes à une heure, un curseur ne permet
+                            # plus d'y viser une valeur.
+                            mode=NumberSelectorMode.BOX,
                         )
                     ),
                     vol.Optional(

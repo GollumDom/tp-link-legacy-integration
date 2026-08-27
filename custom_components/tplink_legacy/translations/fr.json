@@ -48,7 +48,7 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Le httpd du routeur est lent et n'accepte qu'une requête à la fois : évitez un intervalle trop court.",
+        "description": "Le httpd du routeur est lent, n'accepte qu'une requête à la fois et finit par ne plus répondre du tout s'il est trop sollicité : de 10 s à 1 h, 30 s par défaut. Sur un routeur qui se fige, montez à plusieurs minutes.",
         "data": {
           "scan_interval": "Intervalle d'interrogation",
           "include_secrets": "Exposer la clé Wi-Fi dans les attributs"

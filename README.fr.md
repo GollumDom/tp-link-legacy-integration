@@ -103,7 +103,7 @@ toujours au formulaire manuel.
 
 | Option | Défaut | Détail |
 |---|---|---|
-| Intervalle d'interrogation | 30 s | de 10 à 600 s. Le httpd du routeur est lent et ne traite qu'une requête à la fois |
+| Intervalle d'interrogation | 30 s | de 10 s à 1 h. Le httpd du routeur est lent, ne traite qu'une requête à la fois et cesse de répondre s'il est trop sollicité — montez à plusieurs minutes sur un routeur qui se fige |
 | Exposer la clé Wi-Fi | désactivé | ajoute la clé aux attributs de l'interrupteur ; le firmware la livre en clair |
 
 Si le mot de passe du routeur change, Home Assistant propose un formulaire de

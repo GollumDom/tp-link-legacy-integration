@@ -17,7 +17,11 @@ DEFAULT_SCAN_INTERVAL: Final = timedelta(seconds=30)
 DEFAULT_TIMEOUT: Final = 10.0
 
 MIN_SCAN_INTERVAL: Final = 10
-MAX_SCAN_INTERVAL: Final = 600
+#: Une heure. Le httpd de ces firmwares finit par ne plus répondre à force
+#: de connexions, et seul un redémarrage le remet en marche : qui a un
+#: routeur fragile doit pouvoir l'interroger rarement, pas seulement moins
+#: souvent que toutes les dix minutes.
+MAX_SCAN_INTERVAL: Final = 3600
 
 MANUFACTURER: Final = "TP-Link"
 

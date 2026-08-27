@@ -48,7 +48,7 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "The router's httpd is slow and handles one request at a time: avoid a very short interval.",
+        "description": "The router's httpd is slow, handles one request at a time and eventually stops answering altogether when pushed too hard: 10 s to 1 h, 30 s by default. Raise it to several minutes on a router that keeps freezing.",
         "data": {
           "scan_interval": "Polling interval",
           "include_secrets": "Expose the Wi-Fi passphrase in attributes"

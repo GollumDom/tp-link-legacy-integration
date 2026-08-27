@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     CONF_HOST,
     CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
     CONF_USERNAME,
     STATE_HOME,
     STATE_NOT_HOME,
@@ -449,6 +452,40 @@ async def test_polling_recule_quand_le_routeur_ne_repond_plus(
     mock_router.get_status.side_effect = None
     await coordinator.async_refresh()
     assert coordinator.update_interval == normal
+
+
+async def test_le_recul_ne_raccourcit_jamais_un_intervalle_long(
+    hass: HomeAssistant, mock_router
+) -> None:
+    """Reculer, c'est interroger moins souvent — jamais davantage.
+
+    Le plafond de recul vaut dix minutes ; un intervalle réglé au-delà (le
+    réglage existe jusqu'à une heure, pour les routeurs qui se figent) s'y
+    verrait rabattu et le routeur en panne serait interrogé *plus* souvent
+    qu'en marche normale.
+    """
+    from custom_components.tplink_legacy.api import TpLinkError
+    from custom_components.tplink_legacy.const import MAX_SCAN_INTERVAL
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=DATA,
+        options={CONF_SCAN_INTERVAL: MAX_SCAN_INTERVAL},
+        unique_id="48:22:54:2B:A2:D0",
+        title="TL-WR841N",
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = entry.runtime_data
+    normal = coordinator.update_interval
+    assert normal == timedelta(seconds=MAX_SCAN_INTERVAL)
+
+    mock_router.get_status.side_effect = TpLinkError("injoignable")
+    for _ in range(8):
+        await coordinator.async_refresh()
+        assert coordinator.update_interval >= normal
 
 
 async def test_le_recul_ne_relance_pas_une_interrogation_suspendue(

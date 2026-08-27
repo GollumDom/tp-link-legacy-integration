@@ -34,6 +34,10 @@ _LOGGER = logging.getLogger(__name__)
 #: Plafond du recul entre deux relevés après des échecs répétés. Le httpd de ces
 #: routeurs ne tient qu'une poignée de sockets : insister toutes les trente
 #: secondes sur un routeur qui ne répond plus l'achève au lieu de le réveiller.
+#:
+#: Ce n'est qu'un plancher de patience : un intervalle configuré plus long que
+#: ce plafond ne doit pas se retrouver *raccourci* par le recul — reculer, c'est
+#: interroger moins souvent, jamais davantage.
 MAX_BACKOFF = timedelta(minutes=10)
 
 #: Tolérance sur l'horodatage de démarrage. Le firmware compte en secondes
@@ -100,7 +104,8 @@ class TpLinkLegacyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         self._failures += 1
-        interval = min(self._interval * 2 ** min(self._failures, 6), MAX_BACKOFF)
+        cap = max(MAX_BACKOFF, self._interval)
+        interval = min(self._interval * 2 ** min(self._failures, 6), cap)
         if self._polling and interval != self.update_interval:
             self.update_interval = interval
             _LOGGER.debug(

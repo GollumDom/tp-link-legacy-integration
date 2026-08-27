@@ -103,7 +103,7 @@ offered in a list; *Other address…* always leads to the manual form.
 
 | Option | Default | Detail |
 |---|---|---|
-| Polling interval | 30 s | 10 to 600 s. The router's httpd is slow and handles one request at a time |
+| Polling interval | 30 s | 10 s to 1 h. The router's httpd is slow, handles one request at a time and stops answering altogether when pushed too hard — raise it to several minutes on a router that keeps freezing |
 | Expose the Wi-Fi passphrase | off | adds the passphrase to the switch attributes; the firmware hands it over in clear |
 
 If the router's password changes, Home Assistant offers a re-authentication form
